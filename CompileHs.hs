@@ -6,7 +6,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
 
-module HMain where 
+module CompileHs where 
 
 -- GHC imports 
 import GHC 
@@ -102,9 +102,9 @@ config lvl sflags =
             refLevelHoleFits = Just lvl
           }
 
-type Holes = [LHsExpr GhcTc]
+type HoleExprs = [LHsExpr GhcTc]
 
-compToTc :: FilePath -> IO (TypecheckedSource, Holes)
+compToTc :: FilePath -> IO (TypecheckedSource, HoleExprs)
 compToTc fp = runGhc (Just libdir) $ do
   env <- getSession
   dflags <- getSessionDynFlags
@@ -162,7 +162,6 @@ addPreludeIfNotPresent decls =
   where
     isPrelude (IIModule mname) = mname == pRELUDE_NAME
     isPrelude (IIDecl ImportDecl {..}) = unLoc ideclName == pRELUDE_NAME
-    isPrelude _ = False
     prelImport = IIDecl $ simpleImportDecl pRELUDE_NAME
 
 banner :: [Char] -> IO ()

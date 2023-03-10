@@ -41,17 +41,28 @@ instance Similar (Bind Var) where
 
 
 instance Similar (Expr Var) where
-    (Var id) ~== (Var id')                  = trace "ID" id ~== id
-    (Type t) ~== (Type t')                  = trace "TYPE" t ~== t'
-    (Lit l)  ~== (Lit l')                   = trace "LIT" l ~== l -- No point in checking equality of literals, they will not be equal
-    (App e arg) ~== (App e' arg')           = trace "APP" e ~== e' && arg ~== arg'
-    (Lam b e) ~== (Lam b' e')               = trace "LAM" b ~== b' && e ~== e' -- check that the type of the head is equal                                      
-    (Case e v t as) ~== (Case e' v' t' as') = trace "CASE" t ~== t' && e ~== e' && as ~== as' 
-    (Cast e co) ~== (Cast e' co')           = trace "CAST" co ~== co' && e ~== e'
-    (Let b e)   ~== (Let b' e')             = trace "LET" b ~== b' && e ~== e'
-    x ~== y                                 | isHoleExpr x || isHoleExpr y = trace ("isHole: type1:" ++ (showSDocUnsafe $ ppr (typeE x)) `nl` "type2:" `sp` (showSDocUnsafe $ ppr (typeE y))) True
-                                            | isHole' x || isHole' y = trace ("isHole:" ++ "x: " ++ show x ++ "y: " ++ show y) True -- if hole replaced with hole variable
-                                            | otherwise = trace "OTHER" False
+    (Var id) ~== (Var id')                  = --trace "ID" 
+                                              id ~== id
+    (Type t) ~== (Type t')                  = --trace "TYPE" 
+                                              t ~== t'
+    (Lit l)  ~== (Lit l')                   = --trace "LIT" 
+                                              l ~== l -- No point in checking equality of literals, they will not be equal
+    (App e arg) ~== (App e' arg')           = --trace "APP" 
+                                              e ~== e' && arg ~== arg'
+    (Lam b e) ~== (Lam b' e')               = --trace "LAM" 
+                                              b ~== b' && e ~== e' -- check that the type of the head is equal                                      
+    (Case e v t as) ~== (Case e' v' t' as') = --trace "CASE" 
+                                              t ~== t' && e ~== e' && as ~== as' 
+    (Cast e co) ~== (Cast e' co')           = --trace "CAST" 
+                                              co ~== co' && e ~== e'
+    (Let b e)   ~== (Let b' e')             = --trace "LET" 
+                                              b ~== b' && e ~== e'
+    x ~== y                                 | isHoleExpr x || isHoleExpr y = --trace ("isHole: type1:" ++ (showSDocUnsafe $ ppr (typeE x)) `nl` "type2:" `sp` (showSDocUnsafe $ ppr (typeE y))) 
+                                                                            True -- before alpharenaming/case expr holes not replaced 
+                                            | isHole' x || isHole' y = --trace ("isHole:" ++ "x: " ++ show x ++ "y: " ++ show y) 
+                                                                        True -- if hole replaced with hole variable
+                                            | otherwise = --trace "OTHER" 
+                                                          False
 
 instance Similar CoercionR where
     c ~== c' = True -- how should this be checked?
@@ -66,7 +77,8 @@ instance Similar [Alt Var] where
     xs ~== ys = all (uncurry (~==)) (zip xs ys)
  
 instance Similar (Alt Var) where
-    (Alt ac vs e) ~== (Alt ac' vs' e') = trace "ALTVAR" ac ~== ac' && vs ~== vs' && e ~== e'
+    (Alt ac vs e) ~== (Alt ac' vs' e') = --trace "ALTVAR" 
+        ac ~== ac' && vs ~== vs' && e ~== e'
 
 instance Similar [Var] where 
     xs ~== ys = all (uncurry (~==)) (zip xs ys)
@@ -77,13 +89,15 @@ instance Similar AltCon where
     _           ~== _ = True -- DEFAULT 
 
 instance Similar DataCon where 
-    x ~== y = trace "DATACON" dataConName x == dataConName y 
+    x ~== y = --trace "DATACON" 
+        dataConName x == dataConName y 
 
 instance Similar Var where
-    v1 ~== v2 = trace ("VAR " ++ "v1: " ++ showSDocUnsafe (ppr (varName v1)) ++" v2: " ++ showSDocUnsafe (ppr (varName v2))) getOccString v1 == getOccString v2 
+    v1 ~== v2 = --trace ("VAR " ++ "v1: " ++ showSDocUnsafe (ppr (varName v1)) ++" v2: " ++ showSDocUnsafe (ppr (varName v2))) 
+        getOccString v1 == getOccString v2 
 
 instance Similar Type where
-    k1 ~== k2 = trace ("TYPEEQ: " ++ "T1" `nl` (showSDocUnsafe $ ppr k1) `nl` "T2" `nl` (showSDocUnsafe $ ppr k2)) 
+    k1 ~== k2 = --trace ("TYPEEQ: " ++ "T1" `nl` (showSDocUnsafe $ ppr k1) `nl` "T2" `nl` (showSDocUnsafe $ ppr k2)) 
                     show k1 == show k2  -- to disregard uniques of typevars from different programs (after renaming we might be able to use eqType)
         --trace ("type1:" ++ show k1 `nl` "type2:" ++ show k2) show k1 == show k2 ----ugly hack with show, eqType seems to give error in some cases where type is similar 
 
