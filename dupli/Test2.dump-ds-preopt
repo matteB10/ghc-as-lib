@@ -1,0 +1,132 @@
+
+==================== Desugar (before optimization) ====================
+2023-02-10 14:40:02.846135889 UTC
+
+Result size of Desugar (before optimization)
+  = {terms: 23, types: 25, coercions: 0, joins: 0/1}
+
+Rec {
+-- RHS size: {terms: 5, types: 0, coercions: 0, joins: 0/0}
+Test2.$trModule :: GHC.Types.Module
+[LclIdX]
+Test2.$trModule
+  = GHC.Types.Module
+      (GHC.Types.TrNameS "main"#) (GHC.Types.TrNameS "Test2"#)
+
+-- RHS size: {terms: 16, types: 19, coercions: 0, joins: 0/1}
+dupli :: forall a. [a] -> [a]
+[LclIdX]
+dupli
+  = \ (@a_agyy) (ds_dkDf :: [a_agyy]) ->
+      let {
+        fail_dkDh :: (# #) -> [a_agyy]
+        [LclId]
+        fail_dkDh
+          = \ (ds_dkDi [OS=OneShot] :: (# #)) ->
+              case Control.Exception.Base.patError
+                     @GHC.Types.LiftedRep @() "src/Test2.hs:6:1-17|function dupli"#
+              of wild_00 {
+              } } in
+      case ds_dkDf of wild_00 {
+        __DEFAULT -> fail_dkDh GHC.Prim.void#;
+        : x_agky xs_agkz ->
+          case Control.Exception.Base.typeError
+                 @('GHC.Types.BoxedRep 'GHC.Types.Lifted)
+                 @()
+                 "src/Test2.hs:6:16: error:\n\
+                 \    \\226\\128\\162 Found hole: _F :: [a]\n\
+                 \      Where: \\226\\128\\152a\\226\\128\\153 is a rigid type variable bound by\n\
+                 \               the type signature for:\n\
+                 \                 dupli :: forall a. [a] -> [a]\n\
+                 \               at src/Test2.hs:4:1-19\n\
+                 \      Or perhaps \\226\\128\\152_F\\226\\128\\153 is mis-spelled, or not in scope\n\
+                 \    \\226\\128\\162 In an equation for \\226\\128\\152dupli\\226\\128\\153: dupli (x : xs) = _F\n\
+                 \    \\226\\128\\162 Relevant bindings include\n\
+                 \        xs :: [a] (bound at src/Test2.hs:6:10)\n\
+                 \        x :: a (bound at src/Test2.hs:6:8)\n\
+                 \        dupli :: [a] -> [a] (bound at src/Test2.hs:6:1)\n\
+                 \      Valid hole fits include\n\
+                 \        xs\n\
+                 \        []\n\
+                 \        mempty\n\
+                 \      Valid refinement hole fits include\n\
+                 \        dupli _\n\
+                 \        pure _\n\
+                 \        return _\n\
+                 \        fail _\n\
+                 \        (:) _ _\n\
+                 \        (++) _ _\n\
+                 \        (Some refinement hole fits suppressed; use -fmax-refinement-hole-fits=N or -fno-max-refinement-hole-fits)\n\
+                 \(deferred type error)"#
+          of wild_00 {
+          }
+      }
+end Rec }
+
+
+
+==================== Desugar (before optimization) ====================
+2023-02-10 14:40:02.994686186 UTC
+
+Result size of Desugar (before optimization)
+  = {terms: 23, types: 25, coercions: 0, joins: 0/1}
+
+Rec {
+-- RHS size: {terms: 5, types: 0, coercions: 0, joins: 0/0}
+Test2.$trModule :: GHC.Types.Module
+[LclIdX]
+Test2.$trModule
+  = GHC.Types.Module
+      (GHC.Types.TrNameS "main"#) (GHC.Types.TrNameS "Test2"#)
+
+-- RHS size: {terms: 16, types: 19, coercions: 0, joins: 0/1}
+dupli :: forall a. [a] -> [a]
+[LclIdX]
+dupli
+  = \ (@a_akGT) (ds_dly3 :: [a_akGT]) ->
+      let {
+        fail_dly5 :: (# #) -> [a_akGT]
+        [LclId]
+        fail_dly5
+          = \ (ds_dly6 [OS=OneShot] :: (# #)) ->
+              case Control.Exception.Base.patError
+                     @GHC.Types.LiftedRep @() "src/Test2.hs:6:1-17|function dupli"#
+              of wild_00 {
+              } } in
+      case ds_dly3 of wild_00 {
+        __DEFAULT -> fail_dly5 GHC.Prim.void#;
+        : x_akGF xs_akGG ->
+          case Control.Exception.Base.typeError
+                 @('GHC.Types.BoxedRep 'GHC.Types.Lifted)
+                 @()
+                 "src/Test2.hs:6:16: error:\n\
+                 \    \\226\\128\\162 Found hole: _F :: [a]\n\
+                 \      Where: \\226\\128\\152a\\226\\128\\153 is a rigid type variable bound by\n\
+                 \               the type signature for:\n\
+                 \                 dupli :: forall a. [a] -> [a]\n\
+                 \               at src/Test2.hs:4:1-19\n\
+                 \      Or perhaps \\226\\128\\152_F\\226\\128\\153 is mis-spelled, or not in scope\n\
+                 \    \\226\\128\\162 In an equation for \\226\\128\\152dupli\\226\\128\\153: dupli (x : xs) = _F\n\
+                 \    \\226\\128\\162 Relevant bindings include\n\
+                 \        xs :: [a] (bound at src/Test2.hs:6:10)\n\
+                 \        x :: a (bound at src/Test2.hs:6:8)\n\
+                 \        dupli :: [a] -> [a] (bound at src/Test2.hs:6:1)\n\
+                 \      Valid hole fits include\n\
+                 \        xs\n\
+                 \        []\n\
+                 \        mempty\n\
+                 \      Valid refinement hole fits include\n\
+                 \        dupli _\n\
+                 \        pure _\n\
+                 \        return _\n\
+                 \        fail _\n\
+                 \        (:) _ _\n\
+                 \        (++) _ _\n\
+                 \        (Some refinement hole fits suppressed; use -fmax-refinement-hole-fits=N or -fno-max-refinement-hole-fits)\n\
+                 \(deferred type error)"#
+          of wild_00 {
+          }
+      }
+end Rec }
+
+
