@@ -63,6 +63,10 @@ import Control.Monad
 import Data.Maybe (fromJust)
 import Control.Arrow (first, second, (***))
 import Control.Comonad.Store.Class (ComonadStore (peek, pos))
+import GHC.Core.TyCo.Rep (Type(..), TyLit (StrTyLit))
+import GHC.Data.FastString (fsLit)
+import Data.Generics.Biplate (uniplateOnList, universeOn)
+import GHC.Tc.Utils.TcType (TcType)
 
 
 
@@ -142,8 +146,14 @@ compToTc fp = runGhc (Just libdir) $ do
   liftIO $ print lits 
   liftIO $ banner "Holes"
   liftIO $ putStrLn $ "nb of holes: " ++ show (length holes) ++ " holes:" ++ show holes  
-  liftIO $ banner "HoleFits"
-  fits <- getExprFitCands tmod 
+  liftIO $ banner "Holes"
+  fits <- getExprFitCands tmod
+  let holetypes = concatMap extractHoleTypes holes 
+  liftIO $ banner "holetypes"
+  liftIO $ putStrLn $ showSDocUnsafe $ ppr holetypes
+  liftIO $ banner "getinstances for type"
+  cand <- getInstancesForType (head holetypes) 
+  liftIO $ putStrLn $ showSDocUnsafe $ ppr cand 
   liftIO $ putStrLn $ showSDocUnsafe $ ppr (map efc_cand fits) 
   return (tprogram, holes) 
 
@@ -166,6 +176,12 @@ addPreludeIfNotPresent decls =
 
 banner :: [Char] -> IO ()
 banner msg = putStrLn $ "\n\n--- " ++ msg ++ " ---\n\n"
+
+
+extractHoleTypes ::  LHsExpr GhcTc -> [TcType]
+extractHoleTypes expr = case expr of 
+    L l (HsUnboundVar hole@(HER ior t u) on) -> [t] 
+    _                                        -> []
 
 
 extractHoles :: Bag (GenLocated SrcSpanAnnA (HsBindLR GhcTc GhcTc)) -> [LHsExpr GhcTc]

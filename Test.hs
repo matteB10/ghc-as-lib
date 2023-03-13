@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
+{-# HLINT ignore "Use <&>" #-}
 module Test where
 
 
@@ -7,44 +8,54 @@ import GHC.Core (CoreProgram)
 import Compile
 import Transform
 import Similar
-import Utils
+import Utils 
+
+import System.Directory (listDirectory)
+import System.FilePath ((</>), takeDirectory)
+import Data.List (isSuffixOf, isPrefixOf)
+import Data.Char (isDigit)
 
 
-test :: ExerciseName -> IO ()
+data Mode = DEBUG -- print which pair of files compared, and the result 
+          | RES   -- print only the result of all good/bad/norm tests 
+
+
+test :: Mode -> ExerciseName -> IO ()
 -- | Main test-function,
 -- takes the name of the exercise as a string 
-test n = do
-  testSuccess n
-  testFailure n
-  testEta n 
+-- requires that folder with exercise name exist, with subfolders good, bad and norm. 
+test m n = do
+  let tf = case m of 
+          DEBUG -> testPr
+          RES   -> testPrA  
+  succTests n >>= \f -> banner "Expected succesful match: "
+              >> tf n f 
+  failTests n >>= \f -> banner "Expected failure: "
+              >> tf n f 
+  normaliseTests n >>= \f -> banner "Expected match with normalisation: "
+              >> tf n f 
+testPr :: ExerciseName -> [(FilePath,FilePath)] -> IO () 
+-- | Test and print test by test 
+testPr _ [] = return () 
+testPr n (t:ts) = testPr' n t >> testPr n ts  
+  where testPr' n ps@(p1,p2) = do 
+          putStrLn $ "Comparing programs " ++ show p1 `sp` show p2 
+          putStrLn "Desugar:"
+          putStr "programs match: " >> compare_desugar ps >>= print 
+          putStrLn  "Simplifier:"
+          putStr "programs match: " >> compare_simpl ps >>= print 
+          putStrLn  "Manual transformations:"
+          putStr "programs match: " >> compare_norm n ps >>= print  
 
-testEta :: ExerciseName -> IO () 
-testEta n = do 
-  putStrLn "Test eta-reduction desugar"
-  mapM (uncurry compare_desugar) etatest >>= print 
-  putStrLn "Test eta-reduction simplifier"
-  mapM (uncurry compare_simpl) etatest >>= print 
-  putStrLn "Test eta-reduction normalised"
-  mapM (uncurry (compare_norm n)) etatest >>= print 
-
-testSuccess :: ExerciseName -> IO ()
-testSuccess n = do
-  putStrLn "Test success desugar:"
-  mapM (uncurry compare_desugar) succtest >>= print 
-  putStrLn "Test success simpl:"
-  mapM (uncurry compare_simpl) succtest >>= print 
-  putStrLn "Test success desugar normalised:"
-  mapM (uncurry (compare_norm n)) succtest >>= print 
-
-testFailure :: ExerciseName -> IO ()
-testFailure n = do
-  putStrLn "Test Failure desugar:"
-  mapM (uncurry compare_desugar) failtest >>= print 
-  putStrLn  "Test Failure simpl:"
-  mapM (uncurry compare_simpl) failtest >>= print 
-  putStrLn  "Test Failure desugar normalised:"
-  mapM (uncurry (compare_norm n)) failtest >>= print 
-
+testPrA :: ExerciseName -> [(FilePath,FilePath)] -> IO () 
+-- | Test and print all  
+testPrA n ps = do 
+  putStrLn "Desugar:"
+  putStr "programs match" >> mapM compare_desugar ps >>= print 
+  putStrLn  "Simplifier:"
+  putStr "programs match" >> mapM compare_simpl ps >>= print 
+  putStrLn  "Manual transformations:"
+  putStr "programs match" >> mapM (compare_norm n) ps >>= print 
 
 
 comparePrint :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO ()
@@ -67,49 +78,47 @@ comparePrint compile fp1 fp2 = do
   print cp2
   putStrLn $ "Programs match: " ++ show (cp1 ~== cp2)
 
-compare_ :: (FilePath -> IO CoreProgram) -> (CoreProgram -> CoreProgram) -> FilePath -> FilePath -> IO Bool
+compare_ :: (FilePath -> IO CoreProgram) -> (CoreProgram -> CoreProgram) -> FilePath -> FilePath -> IO Bool 
 compare_ comp_pass transf fp1 fp2 = do
   cp1' <- comp_pass fp1
   let cp1 = transf (removeModInfo cp1')
   cp2' <- comp_pass fp2
   let cp2 = transf (removeModInfo cp2')
-  return $ cp1 ~== cp2
+  return (cp1 ~== cp2)
 
 
-compare_desugar, compare_simpl :: FilePath -> FilePath -> IO Bool
-compare_desugar = compare_ (compCore False) id
-compare_simpl = compare_ (compSimpl False) id
-compare_norm :: String -> FilePath -> FilePath -> IO Bool
-compare_norm fname = compare_ (compCore False) (alpha fname . applymany etaRed)
+compare_desugar, compare_simpl :: (FilePath,FilePath) -> IO Bool 
+compare_desugar = uncurry $ compare_ (compCore False) id 
+compare_simpl = uncurry $ compare_ (compSimpl False) id 
+compare_norm :: String -> (FilePath,FilePath) -> IO Bool 
+compare_norm fname = uncurry $ compare_ (compCore False) (alpha fname . applymany etaRed)
+
+            
+
+matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
+matchSuffixedFiles folderPath = do
+  files <- listDirectory folderPath
+  let testFiles = filter (\f -> "Test" `isPrefixOf` f) files 
+  let modFiles = filter (\f -> "Mod" `isPrefixOf` f) files 
+  let matchingTuples = [(dir </> f1, dir </> f2) | f1 <- modFiles, f2 <- testFiles, extractSuffix f1 == extractSuffix f2]
+  return matchingTuples
+  where
+    dir = takeDirectory folderPath
 
 
-s1, s2, s3, s4, s5, s6 :: Pair
-f1, f2 :: Pair
-t1 :: Pair
-
-type Pair = (String,String)
-
-pair :: String -> String -> Pair
-pair x y = (x,y)
+extractSuffix :: FilePath -> String
+extractSuffix filePath =
+  let reversedFile = reverse filePath
+      reversedSuffix = takeWhile (/='.') reversedFile ++ "."
+      revSuffWNum = takeWhile isDigit (drop (length reversedSuffix) reversedFile)
+  in reverse (reversedSuffix ++ revSuffWNum) 
 
 
--- DUPLI TESTS  
--- should succeed 
-s1 = pair "dupli/Test1.hs" "dupli/Mod1.hs"
-s2 = pair "dupli/Test2.hs" "dupli/Mod2.hs"
-s3 = pair "dupli/Test4.hs" "dupli/Mod4.hs" -- inlining 
-s4 = pair "dupli/Test6.hs" "dupli/Mod5.hs" -- hole match with anything
-s5 = pair "dupli/Test5.hs" "dupli/Mod6.hs" -- hole match with anything 
-s6 = pair "myreverse/Test1.hs" "myreverse/Mod1.hs"
-succtest = [s1,s2,s3,s4,s5]
+succTests :: ExerciseName -> IO [(FilePath, FilePath)]
+succTests ename = matchSuffixedFiles ("./"++ename++"/good/") 
 
--- should fail 
-f1 = pair "dupli/Test3.hs" "dupli/Mod3.hs" -- one recursive one not 
-f2 = pair "dupli/Test5.hs" "dupli/Mod5.hs" -- one use foldr other one foldl
-failtest = [f1,f2]
+failTests :: ExerciseName -> IO [(FilePath, FilePath)]
+failTests ename = matchSuffixedFiles ("./"++ename++"/bad/") 
 
--- should succeed, does with manual eta reduction (but not GHC's) 
-t1 = pair "dupli/Test7.hs" "dupli/Mod3.hs"
-t2 = pair "dupli/Test8.hs" "dupli/Mod8.hs"
-etatest = [t1,t2]
-
+normaliseTests :: ExerciseName -> IO [(FilePath, FilePath)]
+normaliseTests ename = matchSuffixedFiles ("./"++ename++"/norm/") 

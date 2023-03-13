@@ -286,8 +286,8 @@ remove :: Var -> Expr Var -> Expr Var
 remove v (App e (Var v')) | v == v' = e
 remove v ex@(App e arg)   | v `ins` arg = App e (remove v arg)
                           | otherwise   = ex
-remove v (Lam b e)      | v == b = trace ("this should never happen") e
-                        | otherwise = Lam b (remove v e)
+remove v (Lam b e) | v == b = trace ("this should never happen") e
+                   | otherwise = Lam b (remove v e)
 remove v e              = e
 
 ins :: Var -> Expr Var -> Bool

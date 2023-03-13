@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-typed-holes #-}
 module Test2 where 
 
-fromBin = undefined 
+dupli :: [a] -> [a]
+dupli xs = _ (replicate 2) xs 
