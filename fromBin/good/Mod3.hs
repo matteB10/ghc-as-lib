@@ -5,4 +5,4 @@ module Mod3 where
 fromBin :: Num a => [a] -> a
 fromBin = foldl op 0
     where 
-      n `op` b = 2*n + b 
+      op n b = 2*n + b 

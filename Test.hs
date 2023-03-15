@@ -34,6 +34,7 @@ test m n = do
               >> tf n f 
   normaliseTests n >>= \f -> banner "Expected match with normalisation: "
               >> tf n f 
+
 testPr :: ExerciseName -> [(FilePath,FilePath)] -> IO () 
 -- | Test and print test by test 
 testPr _ [] = return () 
@@ -91,9 +92,8 @@ compare_desugar, compare_simpl :: (FilePath,FilePath) -> IO Bool
 compare_desugar = uncurry $ compare_ (compCore False) id 
 compare_simpl = uncurry $ compare_ (compSimpl False) id 
 compare_norm :: String -> (FilePath,FilePath) -> IO Bool 
-compare_norm fname = uncurry $ compare_ (compCore False) (alpha fname . applymany etaRed)
+compare_norm fname = uncurry $ compare_ (compCore False) (alpha fname . applymany etaRed . replaceHoles)
 
-            
 
 matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
 matchSuffixedFiles folderPath = do

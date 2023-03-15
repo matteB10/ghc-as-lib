@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wno-typed-holes #-}
-module Mod1 where 
+module Mod3 where 
 
 fromBin bs = fromBin' (length bs - 1) bs
   where

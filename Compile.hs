@@ -90,7 +90,7 @@ import Control.Monad (when)
 
 import Similar
 import Instance 
-import Transform (applymany, etaRed, alpha, removeModInfo)
+import Transform (applymany, etaRed, alpha, removeModInfo, replaceHoles)
 import Utils 
 
 
@@ -136,7 +136,9 @@ holeFlags =
   ]
 
 genFlags :: [GeneralFlag]
-genFlags = [Opt_DeferTypedHoles, Opt_DoEtaReduction, Opt_DoLambdaEtaExpansion]
+genFlags = [Opt_DeferTypedHoles
+           ,Opt_DoEtaReduction
+           ,Opt_DoLambdaEtaExpansion]
 
 compExpr :: String -> IO ()
 compExpr expr = runGhc (Just libdir) $ do
@@ -148,7 +150,8 @@ compExpr expr = runGhc (Just libdir) $ do
 setFlags :: Bool -> Ghc DynFlags 
 setFlags b = do 
    dflags <- getSessionDynFlags 
-   let flags = if b then EnumSet.toList (generalFlags dflags) ++ addFlags  else addFlags  
+   let dflags' = EnumSet.delete Opt_KeepOFiles $ EnumSet.delete Opt_KeepHiFiles (generalFlags dflags) 
+   let flags = if b then EnumSet.toList (generalFlags dflags) ++ addFlags else addFlags  
        addFlags = holeFlags ++ genFlags
        dflags'  = dflags {refLevelHoleFits = Just 2,
                           maxValidHoleFits = Just 8,
@@ -291,8 +294,9 @@ compileAndNormalise name compile fp = do
   cp <- compile fp 
   let rcp = removeModInfo cp  -- module info removed
   let ecp = applymany etaRed rcp -- manual eta reduce 
-  let acp = alpha name ecp    -- alpha renamed, needs to know the name of the exercise for desugar (that we dont want to rename)
-  return [cp,rcp,ecp,acp]     -- return coreprogram of every transformation step 
+  let ecp' = replaceHoles ecp 
+  let acp = alpha name ecp'    -- alpha renamed, needs to know the name of the exercise for desugar (that we dont want to rename)
+  return [cp,rcp,ecp',acp]     -- return coreprogram of every transformation step 
 
 
 compNormalisedPrint :: ExerciseName -> (FilePath -> IO CoreProgram) -> FilePath -> IO ()

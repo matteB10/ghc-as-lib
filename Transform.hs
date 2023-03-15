@@ -4,13 +4,15 @@
 {-# LANGUAGE GADTs #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# HLINT ignore "Use lambda-case" #-}
 
-module Transform (etaRed, alpha, applymany, repHoles, removeModInfo) where
+module Transform (etaRed, alpha, applymany, removeModInfo, replaceHoles) where
 
 import GHC.Core ( Expr(..), CoreExpr, CoreBndr, Bind(..), CoreProgram, Alt (..), valArgCount, CoreBind)
 import GHC.Types.Name ( mkOccName, getOccString, mkInternalName, isDataConName, isSystemName)
 import qualified GHC.Types.Name.Occurrence as Occ
-import GHC.Types.Var
+import qualified GHC.Types.Var as Var 
+import GHC.Types.Var 
     ( Var(..),
       isTyVar,
       tyVarKind,
@@ -129,7 +131,17 @@ addVar id = do
             modify $ \s -> s {env = Map.insert id uq (env s)}
             return id -}
 
-
+replaceHoles :: CoreProgram -> CoreProgram
+replaceHoles cs = evalState (tr cs) (St {env = Map.empty, freshNum = 0, freshHNum = 0, exerName = ""})
+    where tr :: CoreProgram -> Ctx CoreProgram  
+          tr = transformBiM $ \expr -> case expr of 
+                    c@(Case e v t a) | isHoleExpr c -> let id = fromJust (getTypErr e)
+                                                       in newHoleVar id t >>= \i -> return $ Var i 
+                                     | otherwise -> return c
+                    e -> return e  
+              
+                     --trace ("\n hole type equals case type:\n" ++ "vartype: " ++ (showSDocUnsafe $ ppr (varType id')) `nl` "caseT:" ++ ( showSDocUnsafe $ ppr t)) $ 
+                                    
 alpha :: String -> CoreProgram -> CoreProgram
 -- | Rename all local non-type variables, replace holes with variable s
 alpha fname cs = evalState cs' (St {env = Map.empty, freshNum = 0, freshHNum = 0, exerName = fname})
@@ -161,7 +173,8 @@ renameVar v = --trace ("var:" ++ show v ++ " is tyvar: " ++ show (isTyVar v) ++ 
 
 
 aRename :: Expr Var -> Ctx (Expr Var)
-aRename (Var id)       = Var <$> renameVar id
+aRename v@(Var id)     | isHole' v = return v 
+                       | otherwise  = Var <$> renameVar id
 aRename t@(Type _)     = return t
 aRename l@(Lit _)      = return l
 aRename (App e arg)    = do
@@ -172,12 +185,7 @@ aRename l@(Lam b e)      = do --  trace ("Lambda var:" ++ show b ++ " isTyVar: "
         b' <- renameVar b
         e' <- aRename e
         return $ Lam b' e'
-aRename c@(Case e v t a) | isHoleExpr c  = do
-                            let id = fromJust (getTypErr e)
-                            id' <- newHoleVar id t
-                            --trace ("\n hole type equals case type:\n" ++ "vartype: " ++ (showSDocUnsafe $ ppr (varType id')) `nl` "caseT:" ++ ( showSDocUnsafe $ ppr t)) $ 
-                            return $ Var id'
-                         | otherwise = do
+aRename c@(Case e v t a) = do
                             e' <- aRename e
                             v' <- renameVar v
                             a' <- renameAlt a
@@ -219,43 +227,6 @@ getTypErrB (Rec es) = case filter isNothing k of
                     l  -> Just (fromJust $ head l)
         where k = map (getTypErr . snd) es
 
-
-
-
-class ReplaceHoles a where
-    repHoles :: a -> a
-
-
-instance ReplaceHoles CoreProgram where
-    repHoles = map repHoles
-
-instance ReplaceHoles (Bind Var) where
-    repHoles (Rec es)          = Rec $ zip (map (repHoles . fst) es) (map (repHoles . snd) es)
-    repHoles b@(NonRec v e)    | isVarMod v  = b
-                               | otherwise =  NonRec (repHoles v) (repHoles e)
-
-instance ReplaceHoles (Expr Var) where
-    repHoles (Var id)       = trace ("information from real vars: " ++ show id ++ show (varType id) ++ show (pprIdDetails (idDetails id)))
-                              Var $ repHoles id
-    repHoles t@(Type _)     = t
-    repHoles l@(Lit _)      = l
-    repHoles (App e arg)    = App (repHoles e) (repHoles arg)
-    repHoles (Lam b e)      = Lam (repHoles b) (repHoles e)
-    repHoles c@(Case _ _ t _) | isHoleExpr c  = Var (mkLocalVar id_det name mult typ id_inf)
-                            where id_det = VanillaId
-                                  name   = mkInternalName (mkUnique 'h' 1)
-                                                          (mkOccName Occ.varName "HOLE")
-                                                          (mkGeneralSrcSpan (mkFastString "Hole loc"))
-                                  mult   = t
-                                  typ    = t
-                                  id_inf = vanillaIdInfo
-    repHoles (Cast e co)    = repHoles e
-    repHoles (Let b e)      = repHoles e
-    repHoles x              = x
-
-instance ReplaceHoles Var where
-    repHoles v  = v
-               -- etc  
 
 remOutLam :: CoreProgram -> CoreProgram
 remOutLam = map removeOuterLam
@@ -301,9 +272,7 @@ ins v _              = False
 
 
 
-
-
-findHoles :: CoreProgram -> Ctx CoreProgram
+{- findHoles :: CoreProgram -> Ctx CoreProgram
 findHoles = mapM findHoles'
 
 findHoles' :: Bind Var -> Ctx (Bind Var)
@@ -342,10 +311,10 @@ findHole e                  = return e
 {- parseFits :: Literal -> Ctx [Var] 
 parseFits (LitString s) = do 
         holeType <- holeTypeFromMsg s 
-parseFits _             = undefined -}
+parseFits _             = undefined -} -}
 
 
-isTypedHolErrMsg :: Literal -> Bool
+{- isTypedHolErrMsg :: Literal -> Bool
 isTypedHolErrMsg (LitString l) = let msg = lines $ utf8DecodeByteString l
                                  in last msg == "(deferred type error)"
 isTypedHolErrMsg _ = False
@@ -368,7 +337,7 @@ retrieveFits ss = (map T.unpack fits, map T.unpack reffits)
     where clean = map (T.strip . T.pack) ss
           rem  = drop 1 $ dropWhile (/= "Valid hole fits include") clean
           fits = takeWhile (/= "Valid refinement hole fits include") rem
-          reffits = takeWhile (/= "(deferred type error)mainTest") (drop (length fits + 2) rem )
+          reffits = takeWhile (/= "(deferred type error)mainTest") (drop (length fits + 2) rem ) -}
 
 applymany :: (CoreProgram -> CoreProgram) -> CoreProgram -> CoreProgram
 -- | Apply some transformation until it does not perform any new changes 

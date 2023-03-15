@@ -35,7 +35,7 @@ instance Similar CoreProgram where
 instance Similar (Bind Var) where
     (Rec es) ~== (Rec es')          = and $ concatMap (\(x,x') -> map (\(y,y') -> x ~== y && x' ~== y') es) es'
     (NonRec v e) ~== (NonRec v' e') = v ~== v' && e ~== e'
-    x ~== y                         = case x of
+    x ~== y                         = case x of -- TODO: How should I treat recs/nonrecs? can occur because of holes 
                         (Rec ((v,e):vs)) -> let NonRec v' e' = y   in v ~== v' && e ~== e'
                         (NonRec v' e')   -> let Rec ((v,e):vs) = y in v ~== v' && e ~== e'
 
@@ -45,8 +45,8 @@ instance Similar (Expr Var) where
                                               id ~== id
     (Type t) ~== (Type t')                  = --trace "TYPE" 
                                               t ~== t'
-    (Lit l)  ~== (Lit l')                   = --trace "LIT" 
-                                              l ~== l -- No point in checking equality of literals, they will not be equal
+    (Lit l)  ~== (Lit l')                   = --trace ("LIT" `sp` show l `sp` show l')
+                                              l ~== l' -- No point in checking equality of literals, they will not be equal
     (App e arg) ~== (App e' arg')           = --trace "APP" 
                                               e ~== e' && arg ~== arg'
     (Lam b e) ~== (Lam b' e')               = --trace "LAM" 
@@ -60,18 +60,23 @@ instance Similar (Expr Var) where
     x ~== y                                 | isHoleExpr x || isHoleExpr y = --trace ("isHole: type1:" ++ (showSDocUnsafe $ ppr (typeE x)) `nl` "type2:" `sp` (showSDocUnsafe $ ppr (typeE y))) 
                                                                             True -- before alpharenaming/case expr holes not replaced 
                                             | isHole' x || isHole' y = --trace ("isHole:" ++ "x: " ++ show x ++ "y: " ++ show y) 
-                                                                        True -- if hole replaced with hole variable
-                                            | otherwise = --trace "OTHER" 
+                                                                       True -- if hole replaced with hole variable
+                                            | otherwise = --trace ("OTHER: X:" `sp` show x `sp` " Y: " `sp` show y)
                                                           False
 
 instance Similar CoercionR where
     c ~== c' = True -- how should this be checked?
 
 instance Similar Literal where 
-  (LitString l) ~== li                = True 
-  (LitChar c) ~== li                  = True 
-  (LitNumber _ i) ~== (LitNumber _ j) = i == j 
-  l ~== k                             = True 
+  --(LitString l) ~== li                  = True 
+  --(LitChar c) ~== li                    = True 
+  (LitNumber ti i) ~== (LitNumber tj j) = ti == tj && i == j 
+  (LitFloat r) ~== (LitFloat p)         = r == p  
+  (LitDouble r) ~== (LitDouble p)       = r == p 
+  l ~== k                               = True 
+
+r :: Rational 
+r = undefined 
 
 instance Similar [Alt Var] where 
     xs ~== ys = all (uncurry (~==)) (zip xs ys)

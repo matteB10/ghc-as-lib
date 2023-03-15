@@ -1,7 +1,5 @@
 {-# OPTIONS_GHC -Wno-typed-holes #-}
-module Test9 where 
-
+module Mod5 where
 
 dupli :: [a] -> [a]
-dupli xs = concatMap _ xs 
-
+dupli = foldr (\x xs -> x:x:xs) []

@@ -3,5 +3,5 @@ module Mod9 where
 
 
 dupli :: [a] -> [a]
-dupli = concat . map (\x -> [x,x]) 
+dupli = \xs -> concatMap (\x -> [x,x])  xs 
 
