@@ -3,7 +3,7 @@ module Test5 where
 
 
 dupli :: [a] -> [a]
-dupli = foldr _ []  
+dupli = foldr _ _  
 
 
 
