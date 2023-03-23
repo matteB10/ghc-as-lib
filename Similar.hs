@@ -35,9 +35,9 @@ instance Similar CoreProgram where
 instance Similar (Bind Var) where
     (Rec es) ~== (Rec es')          = and $ concatMap (\(x,x') -> map (\(y,y') -> x ~== y && x' ~== y') es) es'
     (NonRec v e) ~== (NonRec v' e') = v ~== v' && e ~== e'
-    x ~== y                         = case x of -- TODO: How should I treat recs/nonrecs? can occur because of holes 
-                        (Rec ((v,e):vs)) -> let NonRec v' e' = y   in v ~== v' && e ~== e'
-                        (NonRec v' e')   -> let Rec ((v,e):vs) = y in v ~== v' && e ~== e'
+    x ~== y                         = False --case x of -- TODO: How should I treat recs/nonrecs? can occur because of holes 
+                        --(Rec ((v,e):vs)) -> let NonRec v' e' = y   in v ~== v' && e ~== e'
+                        --(NonRec v' (Let (Rec ((b,_):s)) e')) -> let Rec ((v,e):vs) = y in v ~== v' && (Let (Rec ((b,e):vs)) (Var b)) ~== e'
 
 
 instance Similar (Expr Var) where
@@ -133,15 +133,22 @@ instance Eq (Bind Var) where
     x == y = False 
 
 instance Eq (Expr Var) where 
-    (Var id) == (Var id')                  = trace "ID" id `eqVar` id
-    (Type t) == (Type t')                  = trace "TYPE" t == t'
-    (Lit l)  == (Lit l')                   = trace "LIT" True --l == l -- No point in checking equality of literals, they will not be equal in most cases
-    (App e arg) == (App e' arg')           = trace "APP" e == e' && arg == arg'
-    (Lam b e) == (Lam b' e')               = trace "LAM" b `eqVar` b' && e == e' -- check that the type of the head is equal                                      
-    (Case e v t as) == (Case e' v' t' as') = trace "CASE" t == t' && e == e' && as == as' 
-    (Cast e co) == (Cast e' co')           = trace "CAST" co == co' && e == e'
-    (Let b e)   == (Let b' e')             = trace ("LET1: " ++ show b ++ " in " ++ show e `nl` "LET2: " ++ show b' ++ " in " ++ show e') 
-                                                    e == e' -- && b == b' 
+    (Var id) == (Var id')                  = --trace "ID" 
+                                             id `eqVar` id
+    (Type t) == (Type t')                  = --trace "TYPE" 
+                                             t == t'
+    (Lit l)  == (Lit l')                   = --trace "LIT" True --l == l -- No point in checking equality of literals, they will not be equal in most cases
+                                             True 
+    (App e arg) == (App e' arg')           = --trace "APP" 
+                                             e == e' && arg == arg'
+    (Lam b e) == (Lam b' e')               = --trace "LAM" 
+                                             b `eqVar` b' && e == e' -- check that the type of the head is equal                                      
+    (Case e v t as) == (Case e' v' t' as') = --trace "CASE" 
+                                             t == t' && e == e' && as == as' 
+    (Cast e co) == (Cast e' co')           = --trace "CAST" 
+                                             co == co' && e == e'
+    (Let b e)   == (Let b' e')             = --trace ("LET1: " ++ show b ++ " in " ++ show e `nl` "LET2: " ++ show b' ++ " in " ++ show e') 
+                                             e == e' && b == b' 
     x == y                                 = False 
 
 instance (Eq Type) where 

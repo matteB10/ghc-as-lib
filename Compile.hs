@@ -29,6 +29,7 @@ import GHC
       mkModuleName,
       coreModule,
       ParsedMod(parsedSource),
+      ParsedModule(..),
       TypecheckedMod(moduleInfo),
       TypecheckedModule(tm_typechecked_source, tm_renamed_source, TypecheckedModule, tm_internals_),
       LoadHowMuch(LoadAllTargets),
@@ -38,7 +39,7 @@ import GHC
       DesugaredModule (dm_core_module, dm_typechecked_module),
       compileToCoreSimplified,
       parseExpr,
-      CoreModule (cm_binds, cm_types), pprVarSig, compileToCoreModule, SrcLoc, getContext, getRealSrcSpan, lookupName, TypecheckedSource, gopt)
+      CoreModule (cm_binds, cm_types), pprVarSig, compileToCoreModule, SrcLoc, getContext, getRealSrcSpan, lookupName, TypecheckedSource, gopt, ModSummary (ModSummary), ParsedModule (ParsedModule))
 
 --import GHC.Show
 import GHC.Paths (libdir)
@@ -63,10 +64,11 @@ import GHC.Core.TyCon (TyCon(..))
 import GHC.Core.TyCo.Rep (Type(..), CoercionR, TyLit(..), TyCoBinder)
 import GHC.Types.Name (Name(..), isHoleName, nameStableString, OccName, getSrcLoc, NamedThing (getName), pprOccName, pprDefinedAt, getOccString, nameUnique, HasOccName (occName), isDataConName, isTyConName, isTyVarName, isSystemName)
 import GHC.Tc.Types (TcGblEnv(..))
+import GHC.Core.Lint 
 
 import GHC.Tc.Errors.Hole ()
 import GHC.Tc.Errors.Hole.FitTypes ()
-import GHC.Driver.Env (HscEnv(hsc_plugins, hsc_static_plugins, hsc_dflags))
+import GHC.Driver.Env (HscEnv(hsc_plugins, hsc_static_plugins, hsc_dflags, hsc_logger))
 import GHC.Driver.Monad (modifySession, Ghc, putMsgM, liftGhcT)
 import qualified GHC.Data.EnumSet as EnumSet
 import GHC.Utils.Encoding (utf8DecodeByteString)
@@ -90,8 +92,10 @@ import Control.Monad (when)
 
 import Similar
 import Instance 
-import Transform (applymany, etaRed, alpha, removeModInfo, replaceHoles)
+import Transform (applymany, etaRed, alpha, removeModInfo, replaceHoles, rewriteRec)
 import Utils 
+import GHC.Core.Opt.Monad (CoreToDo (CoreDoNothing, CoreDoSimplify, CoreDesugarOpt, CoreDoRuleCheck))
+import GHC.Utils.Binary (UserData(ud_get_fs))
 
 
 {- DynFlags plugin options
@@ -159,10 +163,10 @@ setFlags b = do
                           generalFlags = EnumSet.fromList flags} 
    return dflags'   
 
-compilePrint :: FilePath -> IO ()
+compilePrint :: FilePath -> IO (CoreProgram, CoreProgram)
 -- | Compile to Core, print information from all passes and some additional information
 compilePrint file = runGhc (Just libdir) $ do
-  env <- getSession
+  env <- getSession  
   dflags <- getSessionDynFlags 
   let opt_flags = EnumSet.fromList $ [Opt_DeferTypedHoles, Opt_DoEtaReduction, Opt_DoLambdaEtaExpansion]
                          ++ holeFlags 
@@ -170,14 +174,15 @@ compilePrint file = runGhc (Just libdir) $ do
                         maxValidHoleFits = Just 8,
                         maxRefHoleFits   = Just 15,
                         generalFlags = opt_flags} 
-  setSessionDynFlags dflags' 
+  setSessionDynFlags (gopt_set dflags' Opt_DoCoreLinting)
 
   target <- guessTarget file Nothing
   setTargets [target]
   load LoadAllTargets
-  modSum <- getModSummary $ mkModuleName (takeBaseName file)
+  modSum <- getModSummary $ mkModuleName (takeBaseName file) 
 
-  pmod <- parseModule modSum      -- ModuleSummar
+  pmod <- parseModule modSum
+  let psrc = pm_parsed_source pmod 
   -- just for test, error must not be handled like this
   --tmod <- handleSourceError (\e -> err or $ "TYPE ERROR\n" ++ show e) (typecheckModule pmod) 
 
@@ -220,7 +225,13 @@ compilePrint file = runGhc (Just libdir) $ do
   liftIO $ putStrLn $ showGhc dflags' ( modInfoTyThings (moduleInfo tmod) )
 
   liftIO $ banner "Typed Toplevel Exports"
+  let modInf = modInfoExports (moduleInfo tmod) 
   liftIO $ putStrLn $ showGhc dflags' ( modInfoExports (moduleInfo tmod) )
+
+  let norm = applymany etaRed (removeModInfo coreprog)
+  let rew = rewriteRec "factorial" norm  
+  liftIO $ banner "Rewrite"
+  liftIO $ print (rew)
 
   liftIO $ banner "Core Module"
   liftIO $ putStrLn $ showGhc dflags' coreprog
@@ -228,11 +239,19 @@ compilePrint file = runGhc (Just libdir) $ do
   liftIO $ banner "AST Core" -- print Core AST 
   liftIO $ print coreprog
 
+  liftIO $ banner "Lint pass"
+  -- test if core-to-core transformations introduced errors 
+  let coretodo = CoreDoNothing 
+  env <- getSession 
+  let (x:xs) = coreprog
+  liftIO $ lintPassResult env coretodo (x:xs)  
+
   liftIO $ banner "Print literals" -- print literals (to see hole fit candidates)
   liftIO $ putStrLn $ findLiterals coreprog
 
   liftIO $ banner "Print hole loc"
   liftIO $ printHoleLoc coreprog
+  return (removeModInfo coreprog, rew)
 
 
 compToFile :: (FilePath -> IO CoreProgram) -> FilePath -> IO ()
@@ -258,6 +277,9 @@ compToTc fp = runGhc (Just libdir) $ do
   let tprogram = tm_typechecked_source tmod 
   liftIO $ putStrLn $ showGhc dflags tprogram
   return tprogram 
+
+c :: CoreToDo
+c = undefined
 
 compSimpl :: Bool -> FilePath -> IO CoreProgram
 -- | Compile coreprogram, after simplifier pass 
@@ -286,7 +308,7 @@ compCore b fp = runGhc (Just libdir) $ do
   dflags <- setFlags b 
   setSessionDynFlags dflags
   coremod <- compileToCoreModule fp
-  return (cm_binds coremod)
+  return (removeModInfo $ cm_binds coremod)
 
 compileAndNormalise :: ExerciseName -> (FilePath -> IO CoreProgram) -> FilePath -> IO [CoreProgram]
 -- | Compile file and apply transformations, return program from each step  
@@ -295,8 +317,9 @@ compileAndNormalise name compile fp = do
   let rcp = removeModInfo cp  -- module info removed
   let ecp = applymany etaRed rcp -- manual eta reduce 
   let ecp' = replaceHoles ecp 
+  let rrp  = rewriteRec name ecp' 
   let acp = alpha name ecp'    -- alpha renamed, needs to know the name of the exercise for desugar (that we dont want to rename)
-  return [cp,rcp,ecp',acp]     -- return coreprogram of every transformation step 
+  return [cp,rcp,ecp',rrp,acp]     -- return coreprogram of every transformation step 
 
 
 compNormalisedPrint :: ExerciseName -> (FilePath -> IO CoreProgram) -> FilePath -> IO ()
@@ -308,3 +331,32 @@ compNormalisedPrint name compile fp = do
     banner "Alpha-rename" >> print ap 
 
 
+{-
+Maybe this gives hints on how to set/unset certain simplificatoins
+coreDumpFlag :: CoreToDo -> Maybe DumpFlag
+coreDumpFlag (CoreDoSimplify {})      = Just Opt_D_verbose_core2core
+coreDumpFlag (CoreDoPluginPass {})    = Just Opt_D_verbose_core2core
+coreDumpFlag CoreDoFloatInwards       = Just Opt_D_verbose_core2core
+coreDumpFlag (CoreDoFloatOutwards {}) = Just Opt_D_verbose_core2core
+coreDumpFlag CoreLiberateCase         = Just Opt_D_verbose_core2core
+coreDumpFlag CoreDoStaticArgs         = Just Opt_D_verbose_core2core
+coreDumpFlag CoreDoCallArity          = Just Opt_D_dump_call_arity
+coreDumpFlag CoreDoExitify            = Just Opt_D_dump_exitify
+coreDumpFlag CoreDoDemand             = Just Opt_D_dump_stranal
+coreDumpFlag CoreDoCpr                = Just Opt_D_dump_cpranal
+coreDumpFlag CoreDoWorkerWrapper      = Just Opt_D_dump_worker_wrapper
+coreDumpFlag CoreDoSpecialising       = Just Opt_D_dump_spec
+coreDumpFlag CoreDoSpecConstr         = Just Opt_D_dump_spec
+coreDumpFlag CoreCSE                  = Just Opt_D_dump_cse
+coreDumpFlag CoreDesugar              = Just Opt_D_dump_ds_preopt
+coreDumpFlag CoreDesugarOpt           = Just Opt_D_dump_ds
+coreDumpFlag CoreTidy                 = Just Opt_D_dump_simpl
+coreDumpFlag CorePrep                 = Just Opt_D_dump_prep
+coreDumpFlag CoreOccurAnal            = Just Opt_D_dump_occur_anal
+
+coreDumpFlag CoreAddCallerCcs         = Nothing
+coreDumpFlag CoreDoPrintCore          = Nothing
+coreDumpFlag (CoreDoRuleCheck {})     = Nothing
+coreDumpFlag CoreDoNothing            = Nothing
+coreDumpFlag (CoreDoPasses {})        = Nothing
+-}

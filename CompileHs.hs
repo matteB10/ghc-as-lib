@@ -29,7 +29,7 @@ import GHC.Data.Bag (Bag, bagToList, listToBag, emptyBag)
 -- General imports 
 import System.FilePath (takeBaseName)
 import Control.Monad.IO.Class (MonadIO(..))
-import Data.Generics.Uniplate.Data ( universeBi )  
+import Data.Generics.Uniplate.Data ( universeBi, transformBi )  
 import Data.Data (Data)
 import Debug.Trace (trace)
 import Data.List (nub)
@@ -140,8 +140,8 @@ compToTc fp = runGhc (Just libdir) $ do
   let holes = extractHoles tprogram 
   let lits = extractLits tprogram 
   let ref = exHoleLits holes 
-  r <- liftIO $ readIORef $ head ref 
-  liftIO $ putStrLn $ "refterm:" ++ showSDocUnsafe (ppr r)
+  --r <- liftIO $ readIORef $ head ref 
+  --liftIO $ putStrLn $ "refterm:" ++ showSDocUnsafe (ppr r)
   liftIO $ banner "Literals"
   liftIO $ print lits 
   liftIO $ banner "Holes"
@@ -151,10 +151,10 @@ compToTc fp = runGhc (Just libdir) $ do
   let holetypes = concatMap extractHoleTypes holes 
   liftIO $ banner "holetypes"
   liftIO $ putStrLn $ showSDocUnsafe $ ppr holetypes
-  liftIO $ banner "getinstances for type"
-  cand <- getInstancesForType (head holetypes) 
-  liftIO $ putStrLn $ showSDocUnsafe $ ppr cand 
-  liftIO $ putStrLn $ showSDocUnsafe $ ppr (map efc_cand fits) 
+  --liftIO $ banner "getinstances for type"
+  --cand <- getInstancesForType (head holetypes) 
+  --liftIO $ putStrLn $ showSDocUnsafe $ ppr cand 
+  --liftIO $ putStrLn $ showSDocUnsafe $ ppr (map efc_cand fits) 
   return (tprogram, holes) 
 
 -- type TypecheckedSource = LHsBinds GhcTc 
@@ -184,7 +184,7 @@ extractHoleTypes expr = case expr of
     _                                        -> []
 
 
-extractHoles :: Bag (GenLocated SrcSpanAnnA (HsBindLR GhcTc GhcTc)) -> [LHsExpr GhcTc]
+extractHoles :: TypecheckedSource -> [LHsExpr GhcTc]
 extractHoles b = holes
       where bs = map (\(L _ x) -> x) (bagToList b)
             exps = universeBi bs :: [LHsExpr GhcTc]
@@ -193,11 +193,17 @@ extractHoles b = holes
 exHoleLits :: [LHsExpr GhcTc] -> [IORef EvTerm]
 exHoleLits e = [ior | L l (HsUnboundVar hole@(HER ior t u) on) <- e]
 
-extractLits :: Bag (GenLocated SrcSpanAnnA (HsBindLR GhcTc GhcTc)) -> [LHsExpr GhcTc]
+extractLits :: TypecheckedSource -> [LHsExpr GhcTc]
 extractLits b = lits 
       where bs = map (\(L _ x) -> x) (bagToList b)
             exps = universeBi bs :: [LHsExpr GhcTc]
             lits = [L l (HsLit li a) | L l (HsLit li a) <- exps]
+
+{- normaliseCase :: TypecheckedSource -> TypecheckedSource
+normaliseCase = transformBi $ \expr -> case expr of 
+    L (FunBind {}) _ -> undefined
+ -}
+
     
    {-  transformBi $ \expr -> 
    case expr :: HsExpr GhcTc of

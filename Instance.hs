@@ -93,7 +93,7 @@ instance Show a => Show (UniqSet a) where
 
 instance Show Var where
   --show x = showSDocUnsafe $ ppr (varName x)  -- show uniques aswell
-  show = getOccString
+  show = getOccString  -- show occurence name
 
 deriving instance Show b => Show (Bind b)
 deriving instance Show b => Show (Expr b)
@@ -209,11 +209,10 @@ deriving instance Show (HsValBindsLR GhcTc GhcTc)
 --deriving instance Show a => Show (Match GhcTc a)
 --deriving instance Show a => Show (GRHSs GhcTc a)
 deriving instance Show (NHsValBindsLR (GhcPass 'Typechecked))
-deriving instance Show SrcSpanAnnA
+--deriving instance Show SrcSpanAnnA
 deriving instance Show (HsMatchContext (GhcPass 'Renamed))
 deriving instance Show (HsStmtContext (GhcPass 'Renamed))
 deriving instance Show (GhcPass 'Renamed)
-deriving instance Show a => Show (EpAnn a)
 deriving instance Show NoExtField
 deriving instance Show NoExtCon
 deriving instance Show SrcStrictness
@@ -244,6 +243,8 @@ deriving instance Show GhcPs
 
 instance Show (HsDecl GhcPs) where show a = showSDocUnsafe $ ppr a
 
+instance Show a => Show (EpAnn a) where show a = ""
+
 -- belongs to HsDecl if trying to derive instance 
 {- instance Show (TyClDecl GhcPs) where show a = ""
 instance Show (FamilyDecl GhcPs) where show a = ""
@@ -258,10 +259,12 @@ instance Show (WarnDecls GhcPs) where show a = ""
 instance Show (ForeignDecl GhcPs) where show a = ""
 instance Show (StandaloneKindSig GhcPs) where show a = "" -}
 
+instance Show SrcSpanAnnA where show a = ""
+
 instance Show (SrcSpanAnn' (EpAnn AnnList)) where show a = ""
 
 instance Show EpAnnComments where
-  show a = showSDocUnsafe $ ppr a
+  show a = "" -- showSDocUnsafe $ ppr a
 
 instance Show (SrcSpanAnn' (EpAnn AnnContext)) where
   show a = ""
@@ -329,8 +332,14 @@ instance Show (HsLit a) where
 
 
 
-instance Show a => Show (HsOverLit a) where
-  show s = ""
+instance Show (HsOverLit GhcTc) where
+  show (OverLit a b c) = show b ++ show c
+
+instance Show (OverLitVal) where 
+   show (HsIntegral   il) = show il            -- ^ Integer-looking literals;
+   show (HsFractional fl) = show fl          -- ^ Frac-looking literals
+   show (HsIsString   st fs) = show st       -- ^ String-looking literals
+
 
 instance Show TrailingAnn where
   show a = showSDocUnsafe $ ppr a
@@ -350,7 +359,7 @@ instance Show TransForm where
   show a = ""
 
 instance Show AddEpAnn where
-  show a = showSDocUnsafe $ ppr a
+  show a = "" --showSDocUnsafe $ ppr a
 
 instance Show (XBindStmtTc) where
   show a = ""

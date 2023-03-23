@@ -14,6 +14,7 @@ import System.Directory (listDirectory)
 import System.FilePath ((</>), takeDirectory)
 import Data.List (isSuffixOf, isPrefixOf)
 import Data.Char (isDigit)
+import Control.Lens (rewrite)
 
 
 data Mode = DEBUG -- print which pair of files compared, and the result 
@@ -92,7 +93,11 @@ compare_desugar, compare_simpl :: (FilePath,FilePath) -> IO Bool
 compare_desugar = uncurry $ compare_ (compCore False) id 
 compare_simpl = uncurry $ compare_ (compSimpl False) id 
 compare_norm :: String -> (FilePath,FilePath) -> IO Bool 
-compare_norm fname = uncurry $ compare_ (compCore False) (alpha fname . applymany etaRed . replaceHoles)
+compare_norm fname = uncurry $ compare_ (compCore False) (alpha fname . rewriteRec fname . applymany etaRed . replaceHoles . removeModInfo)
+
+
+compileNorm :: String -> FilePath -> IO CoreProgram
+compileNorm fname fp = compCore False fp >>= \p -> return $ alpha fname $ rewriteRec fname $ applymany etaRed $ replaceHoles $ removeModInfo p 
 
 
 matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
@@ -122,3 +127,18 @@ failTests ename = matchSuffixedFiles ("./"++ename++"/bad/")
 
 normaliseTests :: ExerciseName -> IO [(FilePath, FilePath)]
 normaliseTests ename = matchSuffixedFiles ("./"++ename++"/norm/") 
+
+
+m = compCore False "other/good/Mod4.hs" 
+t4 = compCore False "other/good/Test4.hs" 
+t = compCore False "other/good/Test.hs" 
+
+
+
+ct :: IO CoreProgram 
+ct = do 
+  t <- compCore False "myreverse/good/Test3.hs"
+  let t' = removeModInfo t
+      t'' = applymany etaRed t' 
+      rt = rewriteRec "myreverse" t'' 
+  return rt 

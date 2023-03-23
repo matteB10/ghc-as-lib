@@ -16,7 +16,7 @@ import GHC.Plugins
       fsLit,
       showPpr,
       getOccString,
-      tyVarKind ) 
+      tyVarKind, showSDoc, showSDocUnsafe ) 
 import GHC.Core.TyCo.Rep
     ( TyLit(StrTyLit),
       Type(TyConApp, LitTy, AppTy, FunTy, CastTy, ft_af, ft_arg, ft_res,
@@ -30,6 +30,7 @@ import Control.Monad (when)
 
 -- Local imports 
 import Instance 
+import GHC.Utils.Outputable
 
 type ExerciseName = String 
 
@@ -47,6 +48,9 @@ sp x y = x ++ " " ++ y
 nl x y = x ++ "\n" ++ y
 cm x y = x ++ " , " ++ y
 
+
+varNameUnique :: Var -> String 
+varNameUnique = showSDocUnsafe . ppr 
 
 typeE :: Expr Var -> Type
 -- | Experimental function returning the type of a Core expr
