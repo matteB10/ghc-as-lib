@@ -5,22 +5,14 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# HLINT ignore "Use lambda-case" #-}
 
-module Transform (etaRed
-, alpha
-, alphaWCtxt
-, applymany
-, removeModInfo
-, replaceHoles
-, normalise
-, rewriteRec
-, bindNames) where
+module Transform where
 
-import GHC.Core ( Expr(..), CoreExpr, CoreBndr, Bind(..), CoreProgram, Alt (..), valArgCount, CoreBind)
+import GHC.Core ( Expr(..), CoreExpr, CoreBndr, Bind(..), CoreProgram, Alt (..), valArgCount, CoreBind, AltCon (..))
 import GHC.Types.Name ( mkOccName, getOccString, mkInternalName, isDataConName, isSystemName)
 import qualified GHC.Types.Name.Occurrence as Occ
-import qualified GHC.Types.Var as Var
+--import qualified GHC.Types.Var as Var
 import GHC.Types.Var
     ( Var(..),
       isTyVar,
@@ -31,13 +23,13 @@ import GHC.Types.Var
       mkLocalVar,
       idInfo,
       idDetails,
-      Id,
+      Id(..),
       isGlobalId,
       mustHaveLocalBinding,
       setVarType,
       mkGlobalVar,
       isLocalVar,
-      setVarType )
+      setVarType, isTyVarBinder, setIdNotExported )
 import GHC.Core.TyCo.Rep (Type(..), Kind, CoercionR, TyLit (StrTyLit), AnonArgFlag (VisArg))
 import GHC.Core.Type (eqType)
 import GHC.Data.FastString (fsLit, mkFastString)
@@ -46,12 +38,13 @@ import GHC.Core.TyCon (TyCon)
 
 import GHC.Types.SrcLoc ( mkGeneralSrcSpan, srcLocSpan, GenLocated )
 import GHC.Types.Id.Info (IdDetails(VanillaId), vanillaIdInfo, pprIdDetails)
-import GHC.Plugins (IdEnv, showSDocUnsafe, Literal (LitString))
+import GHC.Plugins (IdEnv, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId)
 import GHC.Base ((<|>))
-import GHC.Data.Maybe (fromJust)
+import GHC.Data.Maybe (fromJust, liftMaybeT)
 import GHC.Utils.Outputable (Outputable(ppr))
 import GHC.Iface.Ext.Types (pprIdentifier)
 import GHC.Tc.Utils.TcType (isTyConableTyVar)
+import GHC.Core.Utils (exprType)
 
 import qualified Data.Text as T
 import Control.Monad.Trans.State
@@ -63,9 +56,10 @@ import qualified Data.Map as Map
 import Data.Map (Map(..), insert, lookup)
 import Data.List (intersect, delete, (\\))
 import Control.Comonad.Identity (Identity(runIdentity), (<<=))
-import Control.Lens (universeOf, universeOn, Field1 (_1))
+import Control.Lens (universeOf, universeOn)
 
 import Data.Generics.Uniplate.Data
+    ( rewriteBi, transformBi, transformBiM, universeBi, rewriteBiM, Biplate )
 import GHC.Types.Literal (Literal)
 import GHC.Utils.Encoding (utf8DecodeByteString)
 import GHC.Data.Bag (Bag)
@@ -76,33 +70,60 @@ import GHC (HsExpr (..), Name)
 import GHC.Tc.Types.Evidence (HoleExprRef(..))
 
 
-import Utils
-import Similar
-import Instance
+import Utils ( isHole', isHoleExpr, isVarMod, varNameUnique )
+import Similar ( Similar((~==)) )
 import Data.Type.Equality (apply)
+import Instance ( BiplateFor ) 
+import qualified Data.Map as M
+import Data.Generics.Uniplate (transform)
 
+
+
+normalise :: String -> CoreProgram -> CoreProgram
+-- | Combine normalising transformations
+normalise funname = alpha funname . rewriteRec funname . etaReduce . replaceHoles . removeModInfo
+
+normalise' :: String -> CoreProgram -> CoreProgram
+normalise' funname = rewriteRec funname . etaReduce . removeModInfo
 
 type Uq = (Char , Int)
 
 
 data St = St {
-        env  :: Map.Map Var Var
+         env  :: Map.Map Var Var
+        ,freshUq   :: (Char,Int)
         ,freshNum  :: Int
         ,freshHNum :: Int
         ,exerName  :: String
-        --,fits :: Map.Map Var [Expr Var]
         }
 
 
 type Ctx a = State St a
 
 
+freshVar :: Type -> Ctx Id 
+freshVar t = do 
+    (c,i) <- gets freshUq
+    j <- gets freshNum
+    let name = "c_" ++ show j 
+    let id = mkVanillaVar name (c,i) t  
+    modify $ \s -> s {env = Map.insert id id (env s), freshNum = j+1, freshUq=(c,i+1)} -- update map 
+    return id
+
+mkVanillaVar :: String -> (Char,Int) -> Type -> Var 
+mkVanillaVar n uq t = mkLocalVar id_det name t t id_inf
+        where id_det = VanillaId 
+              uq'    = uncurry mkUnique uq 
+              name   = mkInternalName uq' (mkOccName Occ.varName n) (mkGeneralSrcSpan (mkFastString ("Loc " ++ n)))
+              id_inf = vanillaIdInfo 
+
+incUq :: (Char,Int) -> (Char,Int)
+incUq (c,i) = (c, i+1)
+
+
+
 newVar :: Id -> Ctx Id
 newVar id = do
-    --un@(v,i) <- gets freshV
-    --nm@(n,j) <- gets freshN 
-    --let uq = getUnique id 
-    --modify $ \s -> s { freshUniq = 1 } -- update variable supply
     let uq@(c,i) = unpkUnique $ getUnique id
     j <- gets freshNum
     let name = "n_"++show j
@@ -137,20 +158,18 @@ makeVar id n = mkLocalVar id_det name mult typ id_inf
               name   = mkInternalName uq (mkOccName Occ.varName n) (mkGeneralSrcSpan (mkFastString ("Loc " ++ n)))
               mult   = varType id
               typ    = varType id
-              id_inf = idInfo id
+              id_inf = idInfo id 
 
 
 replaceHoles :: CoreProgram -> CoreProgram
 -- | Replace expressions representing holes with hole variables of the same type 
 replaceHoles cs = evalState (tr cs) (St {env = Map.empty, freshNum = 0, freshHNum = 0, exerName = ""})
     where tr :: CoreProgram -> Ctx CoreProgram
-          tr = transformBiM $ \expr -> case expr of
+          tr = transformBiM $ \case 
                     c@(Case e v t a) | isHoleExpr c -> let id = fromJust (getTypErr e)
                                                        in newHoleVar id t >>= \i -> return $ Var i
                                      | otherwise -> return c
                     e -> return e
-
-                     --trace ("\n hole type equals case type:\n" ++ "vartype: " ++ (showSDocUnsafe $ ppr (varType id')) `nl` "caseT:" ++ ( showSDocUnsafe $ ppr t)) $ 
 
 alphaWCtxt :: String -> CoreProgram -> (CoreProgram, Map.Map Var Var)
 -- | Do renaming and return map of renamed variables        
@@ -219,8 +238,6 @@ aRename (Let b e)      = do
 aRename (Tick ct e)    = aRename e >>= \e' -> return (Tick ct e')
 aRename x              = return x
 
-
--- data Alt Var = Alt AltCon [Var] (Expr Var)
 renameAlt :: [Alt Var] -> Ctx [Alt Var]
 renameAlt = mapM renameAlt'
     where renameAlt' :: Alt Var -> Ctx (Alt Var)
@@ -246,12 +263,6 @@ getTypErrB (Rec es) = case filter isNothing k of
         where k = map (getTypErr . snd) es
 
 
-remOutLam :: CoreProgram -> CoreProgram
-remOutLam = map removeOuterLam
-    where removeOuterLam :: Bind Var -> Bind Var
-          removeOuterLam (NonRec v (Lam b e)) = NonRec v e
-          removeOuterLam b                    = b
-
 
 removeModInfo :: CoreProgram -> CoreProgram
 removeModInfo = concatMap removeModInf
@@ -260,65 +271,17 @@ removeModInfo = concatMap removeModInf
           removeModInf b                         = [b]
 
 
-etaRed :: CoreProgram -> CoreProgram
-etaRed = map etaRed'
-
-{- etaRed' :: Bind Var -> Bind Var
-etaRed' (NonRec v e) = NonRec v $ etaRedE e
-    where etaRedE :: Expr Var -> Expr Var
-          etaRedE ex@(Lam v e) | v `isApplied` e = etaRedE (remove v e)
-                               | otherwise = Lam v (etaRedE e)
-          etaRedE ex           = ex
-etaRed' (Rec evs)    = Rec (zip vs es)
-    where vs = map fst evs 
-          es = map (etaRedE . snd) evs  -}
+etaReduce :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
+etaReduce = rewriteBi etaRed
 
 
-etaRed' :: Bind Var -> Bind Var
-etaRed' = \case
-    NonRec v e -> NonRec v $ etaRedE e
-    Rec evs    -> Rec evs --let vs = map fst evs; es = map (etaRedE . snd) evs in Rec (zip vs es)
-    where etaRedE :: Expr Var -> Expr Var
-          etaRedE ex@(Lam v e) | --trace (show "ISAPPLI: " ++ show  v `sp` show e) 
-                                 v `isApplied` e = etaRedE (remove v e)
-                               | otherwise = Lam v (etaRedE e)
-          --etaRedE ex@(Let b e) = Let (etaRed' b) (etaRedE e)
-          etaRedE ex           = ex
-
-
-remove :: Var -> Expr Var -> Expr Var
-remove v (App e (Var v')) | v == v' = e
-remove v (App e (Type (TyVarTy t))) | --trace ("TYVAR EQ:" ++ show v ++ show t)
-                                      v == t = e
-remove v ex@(App e arg)   | v `isApplied` arg = App e (remove v arg)
-                          | otherwise   = ex
-remove v (Lam b e) | v == b = trace ("this should never happen") e
-                   | otherwise = Lam b (remove v e)
-remove v (Let b e) = Let b (remove v e)
-{- remove v (Case e v' t alt) | all (isApplied v) (fromAlt alt) = Case e v' t (removeAlt alt)
-    where fromAlt :: [Alt Var] -> [Expr Var] 
-          fromAlt as = [e | (Alt _ _ e) <- as] 
-          removeAlt :: [Alt Var] -> [Alt Var]
-          removeAlt [] = [] 
-          removeAlt (a@(Alt k l e):zs) | isApplied v e = Alt k l (remove v e) : removeAlt zs
-                                       | otherwise     = a : removeAlt zs     -}
-remove v e                               = e
-
-isApplied :: Var -> Expr Var -> Bool
-isApplied v (Var v')       = varName v == varName v' && not (isTyVar v) -- varName equality is based on their uniques 
-isApplied v (App e arg)    = isApplied v arg && not (isApplied v e)
-isApplied v (Lam b e)      = isApplied v e
---isApplied v (Case e _ _ a) = isApplied v e || or [v `elem` v' || v `isApplied` e | Alt _ v' e <- a]
---isApplied v (Cast e co)    = isApplied v e
-isApplied v (Let b e)      = isApplied v e
---isApplied v (Type (TyVarTy tv)) = --trace ("tyvar: " ++ show tv ++ " var " ++ show v ++ show (varName v == varName tv)) 
---                                  varName v == varName tv 
-isApplied v _              = False
-
-applymany :: (CoreProgram -> CoreProgram) -> CoreProgram -> CoreProgram
--- | Apply some transformation until it does not perform any new changes 
-applymany f p | f p ~== p = p
-              | otherwise             = applymany f (f p)
+etaRed :: Expr Var ->  Maybe (Expr Var)
+-- | eta reduction, e.g., \x -> f x => f
+etaRed (Lam v (App f args)) = 
+   case args of
+      Var v' | v == v' -> return f 
+      _                -> Nothing
+etaRed _ = Nothing
 
 
 rewriteRec :: String -> CoreProgram -> CoreProgram
@@ -327,12 +290,6 @@ rewriteRec fn cs = evalState cs' (St {env = Map.empty, freshNum = 0, freshHNum =
     where cs' = rewriteRecs cs
 
 
-ins :: Data (Expr Var) => Var -> Expr Var -> Bool
-ins n e = or [v==n | v <- universeBi e :: [Var]]
-
-insB :: Data (Bind Var) => Var -> Bind Var -> Bool
-insB n b = or [v==n | v <- universeBi b :: [Var]]
-
 rewriteRecs :: CoreProgram -> Ctx CoreProgram
 -- | Rewrite top-level Recursive binders as Let-Recs in a NonRec binder (if not used somewhere in the program)
 --   Inline Recs as Let-Recs into NonRecs 
@@ -340,82 +297,65 @@ rewriteRecs [] = return []
 rewriteRecs (b:bs) = case b of
     rr@(Rec ((v,e):ls)) -> do
         if --trace ("BN" ++ show bn ++ "V" ++ show v) 
-           or $ map (insB v) bs  --  if used somewhere else in program, inline it there
+            any (insB v) bs  --  if used somewhere else in program, inline it there
                                  --  might be bad for performanc
-            then
-                let ls = getBind bs v -- find other binders using this binder 
-                in if length ls <= 3
-                      then do -- if not used in more than 2 places, we inline
-                        let p' = --trace ("found binds: " ++ show ls) 
-                                 insertBind rr ls
-                        return $ p' ++ delete rr (bs \\ ls)
-                    else do
-                        bs' <- rewriteRecs bs
-                        return $ rr:bs'
+            then 
+                let (newBinds, rest) = inline rr bs 
+                in rewriteRecs rest >>= \bs' -> return $ newBinds ++ bs'
             else do
                 fresh <- newVar v
                 rewriteRecs bs >>= \bs' -> return $ NonRec v (Let (Rec ((fresh,e):ls)) (Var fresh)):bs' -- rewrite as a nonrec
 
     nr@(NonRec v e) -> do
-        let bn = concatMap bindNames bs
         if --trace ("BN" ++ show bn ++ "V" ++ show v) 
-           or $ map (insB v) bs  --  if used somewhere else in program, inline it there
-                                                                           --  might be bad for performanc
+            any (insB v) bs  --  if used somewhere else in program, inline it there
+                             --  might be bad for performance
             then
-                let ls = getBind bs v -- find other binders using this binder 
-                in if length ls <= 3
-                      then do -- if not used in more than 2 places, we inline
-                        let p' = --trace ("found binds: " ++ show ls) 
-                                 insertBind nr ls
-                        return $ p' ++ delete nr (bs \\ ls)
-                    else do
-                        bs' <- rewriteRecs bs
-                        return $ nr:bs'
+                let (newBinds, rest) = inline nr bs 
+                in rewriteRecs rest >>= \bs' -> return $ newBinds ++ bs'
             else
                 rewriteRecs bs >>= \bs' -> return $ nr:bs'
-        --do 
-       {-  tdefs <- gets topDefs
-        if varName n `elem` tdefs
-                then do
-                    let bn  = concatMap bindNames (b:bs) -- bounded names in whole program
-                        vn  = [varName x | Var x <- universe e] -- varible names in expression 
-                        int = bn `intersect` vn  -- if any bound names appear in the expression
-                    if not (null int) && not (null $ getExprBind bs int)
-                            then do
-                                 let ls = getExprBind bs int
-                                     (nm,bind) = head ls 
-                                 bs' <- rewriteRecs (bind `delete` bs)
-                                 return $ NonRec n (Let bind e):bs'
-                            else
-                                rewriteRecs bs >>= \x -> return $ nr:x
-                else rewriteRecs bs >>= \x -> return $ nr:x
- -}
 
+ins :: Data (Expr Var) => Var -> Expr Var -> Bool
+-- | Find if a variable is used somewhere in an expr
+ins n e = or [v==n | v <- universeBi e :: [Var]]
+
+insB :: Data (Bind Var) => Var -> Bind Var -> Bool
+-- | Find if a variable is used somewhere in a binder
+insB n b = or [v==n | v <- universeBi b :: [Var]]
+
+
+inline :: Bind Var -> [Bind Var] -> ([Bind Var],[Bind Var])
+-- | Inline a binder and return remaining binders 
+inline b bs = let ls  = getBind bs (getBindTopVar b) 
+                  b'  = setBindTopVar (changeScope (getBindTopVar b)) b -- change scope to local of binder variable if inlined 
+                  bs' = insertBind b' ls 
+                  in (bs', delete b (bs \\ ls))
+
+changeScope :: Var -> Var 
+changeScope v | isId v  && isGlobalId v = setIdNotExported $ mkLocalId (varName v) (varMult v) (varType v)
+              | isId v                  = setIdNotExported v 
+              | otherwise = v 
+
+
+setBindTopVar :: Var -> Bind Var -> Bind Var 
+setBindTopVar v = transformBi $ \e -> case e :: CoreExpr of 
+        (Var _) -> Var v
+        e       -> e 
+
+getBindTopVar :: Bind Var -> Var 
+-- | Get variable of a binder 
+getBindTopVar (NonRec v _) = v 
+getBindTopVar (Rec ((v,e):es)) = v 
 
 
 getBind :: [CoreBind] -> Var -> [Bind Var]
-getBind binds v = rs
-        where rs = [r | r <- binds, v `insB` r]
-
-
-
-{- rewriteRecsAsLet :: Bind Var -> Ctx (Bind Var)
-rewriteRecsAsLet = \case  -- TODO: How should I treat recs/nonrecs? can occur because of holes 
-    (Rec ((v,e):vs)) -> do
-            l <- newVar v
-            return $ NonRec v (Let (Rec ((l,e):vs)) (Var l))
-    b -> return b -}
-    --(NonRec v' (Let (Rec ((b,_):s)) e')) -> let Rec ((v,e):vs) = y in v ~== v' && (Let (Rec ((b,e):vs)) (Var b)) ~== e'
-
-
-
-normalise :: String -> CoreProgram -> CoreProgram
--- | apply normalising transformations
-normalise fn cs = evalState cs' (St {env = Map.empty, freshNum = 0, freshHNum = 0, exerName = fn})
-    where cs' = rewriteRecs (applymany etaRed $ replaceHoles $ removeModInfo cs) >>= mapM alphaR
+-- | Get all binders containing a certain variable
+getBind binds v = [r | r <- binds, v `insB` r]
 
 
 bindNames :: Bind Var -> [Name]
+-- | Return all names used in a binder 
 bindNames = \case
     Rec ((v,e):es) -> varName v:bindNamesE e
     NonRec v e     -> varName v:bindNamesE e
@@ -427,100 +367,66 @@ insertBind :: Bind Var -> [Bind Var] -> [Bind Var]
 insertBind r@(Rec es) bs = map insertB bs  -- dont handle when es not empty
     where insertB (NonRec b (Lam x e)) = NonRec b (Lam x (Let r e))
           insertB (NonRec b e) = NonRec b (Let r e)
-        --let ll = liftLambdas (Let r e) r in NonRec b $ removeBindLambdas ll
           insertB (Rec _)      = error "not sure about inlining recs into recs"
-    {- where insertB r (NonRec b e@(Lam x ex)) = NonRec b (liftLambdas e r)  -- lift lambdas outside
-          insertB r (NonRec b e)            = NonRec b (Let r e)
-          insertB _ (Rec rs)                = Rec rs -- change this otherwise it will be removed  -}
 insertBind n@(NonRec v e) bs = map insertB bs -- inline another nonrec 
     where insertB = transformBi $ \case
             (Var v') | v == v' -> e
             e -> e
 
-liftLambdas :: Expr Var -> Bind Var -> Expr Var
-liftLambdas e (Rec [(_,ex)]) = liftLam e ex 
-liftLambdas e _ = error "multiple binds "
-    
-    --foldr (liftLam . snd) e es
+--- EXPERIMENTAL STUFF BELOW
+----------------------------------------------------
 
-liftLam :: Expr Var -> Expr Var -> Expr Var
-liftLam e (Lam x ex) = Lam x (liftLam e ex)
-liftLam e ex         = e
+addDefaultCase :: CoreProgram -> CoreProgram 
+addDefaultCase p = evalState (pm p) initSt 
+    where pm :: CoreProgram -> Ctx CoreProgram 
+          pm = transformBiM addDefCase 
+          
+initSt :: St 
+initSt = St {env = Map.empty, freshNum = 0, freshHNum = 0, exerName = " ", freshUq = ('x',1)}
 
-removeBindLambdas :: Expr Var -> Expr Var
-removeBindLambdas = transformBi $ \case
-    (Let (Rec es) e) -> Let (Rec (map removeL es)) e
-    e -> e
-
-
-removeL :: (Var, Expr Var) -> (Var,Expr Var )
-removeL (v, Lam x e) = removeL (v,e)
-removeL e         = e
+addDefCase :: Expr Var -> Ctx (Expr Var)
+addDefCase ex@(Lam v e) | isTyVar v                     = Lam v <$> addDefCase e
+                            | needsCaseBinding (varType v) e = addCase e v -- rather tests whether
+                                                                           -- needs to use a case rather than let bind
+addDefCase e = return e 
 
 
-{- findHoles :: CoreProgram -> Ctx CoreProgram
-findHoles = mapM findHoles'
+addCase :: Expr Var -> Var -> Ctx (Expr Var)
+addCase e v = do
+    let t = varType v  
+    fresh <- freshVar t
+    wild <- freshVar t  -- should have same type as the case 
+    e' <- subst fresh v e 
+    return $ Lam fresh $ mkDefaultCase (Var fresh) wild e' 
 
-findHoles' :: Bind Var -> Ctx (Bind Var)
-findHoles' (NonRec b exp)  = findHole exp >>= \e -> return $ NonRec b e
-findHoles' (Rec es)        = do
-    exs <- mapM (findHole . snd) es
-    let vs = map fst es
-    return $ Rec (zip vs exs)
+subst :: Var -> Var -> CoreExpr -> Ctx CoreExpr
+subst v v' = transformBiM (sub v v')  
 
-{-Case (App (App (App (Var typeError)
-(Type (TyConApp BoxedRep [TyConApp Lifted []])))
-(Type (TyConApp () []))) (Lit dupli/Dupli.hs:7:9: e-}
+sub :: Var -> Var -> CoreExpr -> Ctx CoreExpr
+sub v v' = \case 
+    (Var id) | id == v' -> do 
+        modify $ \s -> s {env = Map.insert v v' (env s)}
+        return (Var v)
+    e -> return e 
 
-findHole :: Expr Var -> Ctx (Expr Var)
-findHole (Case (App (App (App (Var te) _) _) (Lit emsg)) _ _ t) = do
-        b' <- newHoleVar te (varType te)
-        --fits <- parseFits emsg 
+-- Core Utils 
+-- mkSingleAltCase
+-- needsCaseBInding
+-- bindNonRec
+-- mkAltExpr -- make case alternatives 
+-- | Extract the default case alternative
+-- findDefault :: [Alt b] -> ([Alt b], Maybe (Expr b))
+-- -- | Find the case alternative corresponding to a particular
+-- constructor: panics if no such constructor exists
+-- findAlt :: AltCon -> [Alt b] -> Maybe (Alt b)
 
-        return $ Var b'
-{- findHole v@(Var var) | getOccString (varName var) == "typeError" = do 
-                        v' <- newHoleVar var (varType var)
-                        return $ Var v'
-                     | otherwise = return v  -}
-{- findHole (Lit l)            = when (isTypedHolErrMsg l) $ let ((r,c), t) = holeTypeFromMsg (show l)
-                                                          in putStrLn $ "found hole at " ++ p (r ++ ":" ++ c) ++ " with type: " ++ t
-findHole (App e bndr)       = findHole e >> findHole bndr
-findHole (Lam b e)          = findHole e
-findHole (Let bi e)         = findHoles' bi >> findHole e
-findHole (Case e _ _ alts)  = findHole e >> mapM_ (\(Alt _ _ e) -> findHole e) alts --alts :: Alt AltCon [b] (Expr b)
-findHole (Cast  e _)        = findHole e
-findHole (Tick _ e)         = findHole e
-findHole (Type t)           = return ()
-findHole (Coercion c)       = return () -}
-findHole e                  = return e
+-- check if we can use diffBinds from Core.Utils to find small diffs 
+-- diffExpr instead of my similarity relation? need an RnEnv2
 
-{- parseFits :: Literal -> Ctx [Var] 
-parseFits (LitString s) = do 
-        holeType <- holeTypeFromMsg s 
-parseFits _             = undefined -} -}
+-- mkLamTypes :: [Var] -> Type -> Type
+-- can this be used for beta-expansioN???????
 
-
-{- isTypedHolErrMsg :: Literal -> Bool
-isTypedHolErrMsg (LitString l) = let msg = lines $ utf8DecodeByteString l
-                                 in last msg == "(deferred type error)"
-isTypedHolErrMsg _ = False
-
-
-holeTypeFromMsg :: String -> Maybe (String, [String])
-holeTypeFromMsg s | length s <= 1  = Nothing
-                  | otherwise = Just (htype, vf)
-        where (l1:l2:ls) = lines s
-              rm         = drop 1 (dropWhile (/= ':') l1)
-              row        = takeWhile (/= ':') rm
-              col        = takeWhile (/= ':') (drop (length row + 1) rm)
-              hname      = takeWhile (/= ' ') (drop 2 (dropWhile (/= ':') l2)) -- if hole suffixed with identifier
-              htype      = drop 3 $ dropWhile (/= ':') (drop 1 (dropWhile (/= ':') l2))
-              (vf,rf)    = retrieveFits ls
-
-retrieveFits :: [String] -> ([String],[String])
-retrieveFits [] = ([],[])
-retrieveFits ss = (map T.unpack fits, map T.unpack reffits)
-    where clean = map (T.strip . T.pack) ss
-          rem  = drop 1 $ dropWhile (/= "Valid hole fits include") clean
-          fits = takeWhile (/= "Valid refinement hole fits include") rem
-          reffits = takeWhile (/= "(deferred type error)mainTest") (drop (length fits + 2) rem ) -}
+-- applyTypeToArgs :: HasDebugCallStack => SDoc -> Type -> [CoreExpr] -> Type
+-- ^ Determines the type resulting from applying an expression with given type
+--- to given argument expressions.
+-- Do I need to do this backwards when eta-reducing?

@@ -4,74 +4,151 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 
-module CompileHs where 
+module CompileHs where
 
 -- GHC imports 
-import GHC 
+import GHC
+    ( desugarModule,
+      getModSummary,
+      guessTarget,
+      parseModule,
+      runGhc,
+      setSessionDynFlags,
+      setTargets,
+      typecheckModule,
+      load,
+      getSessionDynFlags,
+      parenthesizeHsExpr,
+      simpleImportDecl,
+      parseImportDecl,
+      unLoc,
+      mkModuleName,
+      coreModule,
+      ParsedModule(pm_parsed_source),
+      TypecheckedMod(typecheckedSource),
+      TypecheckedModule(tm_typechecked_source),
+      TypecheckedSource,
+      Type,
+      Name(..),
+      GeneralFlag(Opt_KeepHiFiles, Opt_Hpc, Opt_DeferTypedHoles,
+                  Opt_DoEtaReduction, Opt_DoLambdaEtaExpansion,
+                  Opt_ShowHoleConstraints, Opt_ShowValidHoleFits,
+                  Opt_SortValidHoleFits, Opt_SortBySizeHoleFits,
+                  Opt_ShowTypeAppOfHoleFits, Opt_ShowTypeOfHoleFits,
+                  Opt_ShowProvOfHoleFits, Opt_ShowMatchesOfHoleFits, Opt_OmitYields,
+                  Opt_KeepOFiles),
+      LoadHowMuch(LoadAllTargets),
+      Ghc,
+      GhcMonad(getSession),
+      DynFlags(generalFlags, refLevelHoleFits, maxValidHoleFits,
+               maxRefHoleFits),
+      HsModule(hsmodDecls, hsmodImports),
+      GhcPs,
+      GhcTc,
+      ImportDecl(ImportDecl, ideclExt, ideclHiding, ideclAs,
+                 ideclImplicit, ideclQualified, ideclSafe, ideclSource,
+                 ideclPkgQual, ideclName, ideclSourceSrc),
+      EpAnn(EpAnnNotUsed),
+      NameAnn,
+      SrcSpanAnn'(SrcSpanAnn, locA, ann),
+      SrcSpanAnnA,
+      InteractiveImport(..),
+      RdrName,
+      GenLocated(..),
+      Id,
+      HsBindLR(FunBind, fun_matches),
+      LHsDecl,
+      GRHSs(GRHSs, grhssGRHSs),
+      HsExpr(HsLit, HsUnboundVar, HsPar, HsVar, HsApp),
+      HsMatchContext(CaseAlt, FunRhs),
+      LGRHS,
+      LHsExpr,
+      LMatch,
+      Match(Match),
+      MatchGroup(MG, mg_alts),
+      LIdP,
+      NoExtField(NoExtField),
+      Pat(VarPat), getName, HsParsedModule, ModSummary (..), ModIface )
 import GHC.Paths (libdir)
 import GHC.Driver.Main 
 import GHC.Driver.Session
-import qualified GHC.Data.EnumSet as EnumSet 
-import GHC.Utils.Outputable (Outputable (ppr), showSDocUnsafe)
-import GHC.Driver.Ppr (showPpr)
+import qualified GHC.Data.EnumSet as EnumSet
+import GHC.Driver.Ppr (showPpr, showSDoc)
 import GHC.LanguageExtensions (Extension(..))
 import GHC.IORef (newIORef, IORef (..), readIORef)
-import GHC.Builtin.Names
+import GHC.Builtin.Names ( pRELUDE_NAME )
 import GHC.Tc.Types.Evidence (HoleExprRef(..), EvTerm (..), EvExpr)
 import GHC.Core (CoreExpr)
-import qualified GHC.Core.Utils as CoreUtils 
+import qualified GHC.Core.Utils as CoreUtils
 import GHC.STRef (STRef(..))
-import GHC.Plugins (mkOccName, getOccString, occNameString, VarSet, nubSort, HoleFit (RawHoleFit))
+import GHC.Plugins (mkOccName, getOccString, occNameString, VarSet, ModGuts(..), nubSort, HoleFit (RawHoleFit), vanillaIdInfo, mkInternalName, mkGeneralSrcSpan, Var (varType), IdDetails (VanillaId), nameRdrName, Annotation (Annotation), ModGuts (mg_anns), deserializeWithData, fromSerialized, CoreM, flattenBinds, errorMsg, thNameToGhcName, mkRealSrcLoc, HscEnv (..), runHsc, ModSummary, Hsc (Hsc), hsc_home_unit, GenModule (..), realSrcLocSpan, isHoleModule, HasCallStack)
 import GHC.Data.Bag (Bag, bagToList, listToBag, emptyBag)
+import GHC.Utils.Outputable (Outputable(..), SDoc, showSDocUnsafe, (<+>), ppr, text)
 
 -- General imports 
 import System.FilePath (takeBaseName)
 import Control.Monad.IO.Class (MonadIO(..))
-import Data.Generics.Uniplate.Data ( universeBi, transformBi )  
+import Data.Generics.Uniplate.Data ( universeBi, transformBi )
 import Data.Data (Data)
 import Debug.Trace (trace)
 import Data.List (nub)
+import Data.List.HT (partitionMaybe)
 
 -- local imports 
-import Instance 
-
+import Instance
 
 
 -- propr imports
-import qualified Data.Data.Lens as Lens 
+import qualified Data.Data.Lens as Lens
 import Data.Data.Lens (template, tinplate, uniplate)
 import GHC.Tc.Types.Constraint (Cts, Ct (..), ctPred, emptyWC, WantedConstraints (wc_simple), CtEvidence (CtWanted), TcEvDest (HoleDest))
-import GHC.Utils.FV 
-import Control.Lens (Getting, to, universeOf, universeOn, universeOnOf, transformOf)
+import GHC.Utils.FV
+import Control.Lens (Getting, to, universeOf, universeOn, universeOnOf, transformOf, transformOn)
 import Control.Lens.Combinators (Fold, contextsOf)
 import GHC.Types.Var.Set (isEmptyVarSet, intersectVarSet)
 import GHC.Core.TyCo.FVs (tyCoFVsOfType)
 import GHC.Core.TyCo.Ppr (appPrec)
 import GHC.HsToCore.Monad (initDsWithModGuts)
 import GHC.HsToCore.Expr (dsLExpr)
-import System.Directory 
-import System.Environment 
+import System.Directory
+import System.Environment
 import System.IO
 import System.Random
 
-import qualified Data.Map as Map 
+import qualified Data.Map as Map
 import Numeric (showHex)
 import GHC.Tc.Errors.Hole.FitTypes (TypedHole, HoleFit (HoleFit))
 import Control.Monad
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, listToMaybe)
 import Control.Arrow (first, second, (***))
 import Control.Comonad.Store.Class (ComonadStore (peek, pos))
 import GHC.Core.TyCo.Rep (Type(..), TyLit (StrTyLit))
-import GHC.Data.FastString (fsLit)
+import GHC.Data.FastString (fsLit, mkFastString)
 import Data.Generics.Biplate (uniplateOnList, universeOn)
 import GHC.Tc.Utils.TcType (TcType)
+import qualified GHC.Types.Name.Occurrence as Occ
+import GHC.Types.Var (mkLocalVar)
+import GHC.Types.Unique (mkUnique)
+import GHC.Tc.Deriv.Generate (mkRdrFunBind)
 
+import Language.Haskell.TH (Q, Exp, runQ, pprint)
+import qualified Language.Haskell.TH.Syntax as TH
+import Language.Haskell.TH.Syntax (liftData, Dec (..), AnnTarget (..), Pragma (AnnP), Q (unQ))
+
+
+import Rewrite
+import Parsers 
+import qualified Data.Text as T
+import Utils (showGhcUnsafe, printGhc)
+import TypeCheckW ( hscTypecheckAndGetWarnings )
 
 
 showGhc :: (Outputable a) => DynFlags -> a -> String
-showGhc = showPpr 
+showGhc = showPpr
 
 
 setFlags :: [GeneralFlag]
@@ -80,8 +157,11 @@ setFlags = [Opt_Hpc]
 exts :: [Extension]
 exts = [PartialTypeSignatures, ExtendedDefaultRules]
 
+wFlags :: [WarningFlag]
+wFlags = [Opt_WarnOverlappingPatterns]
 
-gen_flags :: [GeneralFlag] 
+
+gen_flags :: [GeneralFlag]
 gen_flags = [Opt_DeferTypedHoles,
              Opt_DoEtaReduction,
              Opt_DoLambdaEtaExpansion,
@@ -108,8 +188,9 @@ config lvl sflags =
 
 type HoleExprs = [LHsExpr GhcTc]
 
-compToTc :: FilePath -> IO (TypecheckedSource, HoleExprs)
-compToTc fp = runGhc (Just libdir) $ do
+
+compile :: FilePath -> IO ()
+compile fp = runGhc (Just libdir) $ do
   env <- getSession
   dflags <- getSessionDynFlags
   let flags = EnumSet.delete Opt_KeepOFiles $ EnumSet.delete Opt_KeepHiFiles (generalFlags dflags)
@@ -119,50 +200,105 @@ compToTc fp = runGhc (Just libdir) $ do
                         maxRefHoleFits   = Just 15,
                         generalFlags = EnumSet.fromList gflags}
   setSessionDynFlags dflags'
+  --imports <- addPreludeIfNotPresent <$> mapM (fmap IIDecl . parseImportDecl) []
+  target <- guessTarget fp Nothing
+  setTargets [target]
+  load LoadAllTargets
+  let parsdecl = Parsers.parseDecl dflags' fp "factorial :: (Eq t, Num t) => t -> t\nfactorial 0 = 1 \nfactorial m = m * factorial (m - 1)" 
+  modSum <- getModSummary $ mkModuleName (takeBaseName fp)
+  pmod <- parseModule modSum 
+  let (L l hsMod) = pm_parsed_source pmod -- ParsedSource = Located HsModule 
+  let parseProg = mkTH hsMod 
+  liftIO $ putStrLn "TH"
+  liftIO $ print parsdecl
+  liftIO $ putStrLn "mkTH"
+  p <- liftIO (runQ parseProg )
+  liftIO $ putStrLn $ pprint p  
+
+
+compToPars :: FilePath -> IO HsModule
+-- | Parse a module
+compToPars fp = runGhc (Just libdir) $ do
+  env <- getSession
+  dflags <- getSessionDynFlags
+  let flags = EnumSet.delete Opt_KeepOFiles $ EnumSet.delete Opt_KeepHiFiles (generalFlags dflags)
+  let gflags = EnumSet.toList flags ++ gen_flags
+  let dflags' = dflags {refLevelHoleFits = Just 2,
+                        maxValidHoleFits = Just 8,
+                        maxRefHoleFits   = Just 15,
+                        generalFlags = EnumSet.fromList gflags}
+  setSessionDynFlags dflags'
+  --imports <- addPreludeIfNotPresent <$> mapM (fmap IIDecl . parseImportDecl) []
+  target <- guessTarget fp Nothing
+  setTargets [target]
+  load LoadAllTargets
+  modSum <- getModSummary $ mkModuleName (takeBaseName fp)
+  pmod <- parseModule modSum :: Ghc ParsedModule
+  let (L l psrc) = pm_parsed_source pmod -- ParsedSource = Located HsModule 
+  let imports = hsmodImports psrc
+  let topdecls = hsmodDecls psrc
+  return psrc
+
+compToTc :: FilePath -> IO (TypecheckedSource, HoleExprs)
+-- | Compile and stop after typechecker 
+compToTc fp = runGhc (Just libdir) $ do
+  env <- getSession
+  dflags <- getSessionDynFlags
+  let flags = EnumSet.delete Opt_KeepOFiles $ EnumSet.delete Opt_KeepHiFiles (generalFlags dflags)
+  let gflags = EnumSet.toList flags ++ gen_flags 
+  let dflags' = dflags {refLevelHoleFits = Just 2,
+                        maxValidHoleFits = Just 8,
+                        maxRefHoleFits   = Just 15,
+                        warningFlags = EnumSet.fromList wFlags,
+                        generalFlags = EnumSet.fromList gflags}
+  setSessionDynFlags dflags'
   imports <- addPreludeIfNotPresent <$> mapM (fmap IIDecl . parseImportDecl) []
   target <- guessTarget fp Nothing
   setTargets [target]
   load LoadAllTargets
   modSum <- getModSummary $ mkModuleName (takeBaseName fp)
-  pmod <- parseModule modSum :: Ghc ParsedModule 
+  pmod <- parseModule modSum :: Ghc ParsedModule
   let (L l psrc) = pm_parsed_source pmod -- ParsedSource = Located HsModule 
-  let imports = hsmodImports psrc 
-  let topdecls = hsmodDecls psrc 
+  let imports = hsmodImports psrc
+  let topdecls = hsmodDecls psrc
   liftIO $ banner "topDecls"
   liftIO $ print topdecls
-  --v <- compileParsedExpr psrc
   tmod <- typecheckModule pmod
-  -- tm_renamed_source :: Maybe RenamedSource
-  let tprogram = tm_typechecked_source tmod 
-  liftIO $ putStrLn $ showSDocUnsafe $ ppr tprogram 
+  env' <- getSession 
+  let tenv = hsc_type_env_var env'
+  case tenv of 
+    Just (m,te) -> do
+      r <- liftIO $ readIORef te 
+      liftIO $ printGhc r
+    Nothing -> liftIO $ putStrLn "No TypeEnv"
+  let tprogram = tm_typechecked_source tmod
+  liftIO $ putStrLn $ showSDocUnsafe $ ppr tprogram
   liftIO $ banner "typecheckde"
   liftIO $ print tprogram
-  let holes = extractHoles tprogram 
-  let lits = extractLits tprogram 
-  let ref = exHoleLits holes 
+  let holes = extractHoles tprogram
+  let lits = extractLits tprogram
+  let ref = exHoleLits holes
   --r <- liftIO $ readIORef $ head ref 
   --liftIO $ putStrLn $ "refterm:" ++ showSDocUnsafe (ppr r)
   liftIO $ banner "Literals"
-  liftIO $ print lits 
+  liftIO $ print lits
   liftIO $ banner "Holes"
-  liftIO $ putStrLn $ "nb of holes: " ++ show (length holes) ++ " holes:" ++ show holes  
+  liftIO $ putStrLn $ "nb of holes: " ++ show (length holes) ++ " holes:" ++ show holes
   liftIO $ banner "Holes"
   fits <- getExprFitCands tmod
-  let holetypes = concatMap extractHoleTypes holes 
+  let holetypes = concatMap extractHoleTypes holes
   liftIO $ banner "holetypes"
   liftIO $ putStrLn $ showSDocUnsafe $ ppr holetypes
+  hscenv <- getSession 
+  --hscTypecheckAndGetWarnings :: HscEnv ->  ModSummary -> IO (FrontendResult, WarningMessages)
+  liftIO $ banner "typecheck and warnings" -- never find any warnings???
+  liftIO $ hscTypecheckAndGetWarnings hscenv modSum
   --liftIO $ banner "getinstances for type"
   --cand <- getInstancesForType (head holetypes) 
   --liftIO $ putStrLn $ showSDocUnsafe $ ppr cand 
   --liftIO $ putStrLn $ showSDocUnsafe $ ppr (map efc_cand fits) 
-  return (tprogram, holes) 
-
--- type TypecheckedSource = LHsBinds GhcTc 
---                        = LHsBindsLR id id
---                        = Bag (LHsBindLR idL idR)
---                        = Bag (XRec idL (HsBindLR idL idR))
--- HsBindLR idL idR = FunBind ... | PatBind ... 
-
+  return (tprogram, holes)
+ 
 
 addPreludeIfNotPresent :: [InteractiveImport] -> [InteractiveImport]
 addPreludeIfNotPresent decls =
@@ -179,8 +315,8 @@ banner msg = putStrLn $ "\n\n--- " ++ msg ++ " ---\n\n"
 
 
 extractHoleTypes ::  LHsExpr GhcTc -> [TcType]
-extractHoleTypes expr = case expr of 
-    L l (HsUnboundVar hole@(HER ior t u) on) -> [t] 
+extractHoleTypes expr = case expr of
+    L l (HsUnboundVar hole@(HER ior t u) on) -> [t]
     _                                        -> []
 
 
@@ -194,17 +330,17 @@ exHoleLits :: [LHsExpr GhcTc] -> [IORef EvTerm]
 exHoleLits e = [ior | L l (HsUnboundVar hole@(HER ior t u) on) <- e]
 
 extractLits :: TypecheckedSource -> [LHsExpr GhcTc]
-extractLits b = lits 
+extractLits b = lits
       where bs = map (\(L _ x) -> x) (bagToList b)
             exps = universeBi bs :: [LHsExpr GhcTc]
             lits = [L l (HsLit li a) | L l (HsLit li a) <- exps]
 
-{- normaliseCase :: TypecheckedSource -> TypecheckedSource
-normaliseCase = transformBi $ \expr -> case expr of 
-    L (FunBind {}) _ -> undefined
+{- rewriteGuards :: Data (GRHS a b) => TypecheckedSource -> TypecheckedSource
+rewriteGuards = transformBi $ \expr -> case expr of 
+  L FunBind {fun_matches = MG {mg_alts = L  [L  (Match {m_ctxt = FunRhs {..}, m_pats = [p], m_grhss = GRHSs {grhssGRHSs = [L a GRHS [] b]}})]}} [] -> undefined 
  -}
 
-    
+
    {-  transformBi $ \expr -> 
    case expr :: HsExpr GhcTc of
       (HsUnboundVar x@(HER _ t u) n) -> do 
@@ -235,9 +371,9 @@ getExprFitCands tmod = do
   -- If it type checks, we can use the expression
   liftIO $ putStrLn "Typechecking the expression..."
   let exprs :: [LHsExpr GhcTc]
-      exprs = universeOnOf tinplate Lens.uniplate $ typecheckedSource tmod 
+      exprs = universeOnOf tinplate Lens.uniplate $ typecheckedSource tmod
           -- TODO: is it OK to ignore the wcs here? Should be.
-      esAndNames = toEsAnNames emptyWC $ filter nonTriv exprs 
+      esAndNames = toEsAnNames emptyWC $ filter nonTriv exprs
   desugared <- desugarModule tmod
   liftIO $ putStrLn "Getting the session..."
   hsc_env <- getSession
@@ -253,7 +389,7 @@ getExprFitCands tmod = do
             esAndNames
   return $ zipWith finalize esAndNames mb_tys
   where
-    toEsAnNames wc = map (\e -> (e, bagToList $ wc_simple wc, concatMap e_ids $ flattenExpr e)) 
+    toEsAnNames wc = map (\e -> (e, bagToList $ wc_simple wc, concatMap e_ids $ flattenExpr e))
     e_ids (L _ (HsVar _ v)) = [unLoc v]
     --e_ids (L _ (HsUnboundVar hole@(HER ior t u) on)) =  undefined
     e_ids _ = []
@@ -270,7 +406,7 @@ getExprFitCands tmod = do
     nonTriv _ = True
     finalize :: (LHsExpr GhcTc, [Ct], [Id]) -> Maybe Type -> ExprFitCand
     finalize (e, _, rs) ty@Nothing = EFC (parenthesizeHsExpr appPrec e) emptyBag rs ty
-    finalize (e, wc, rs) ty@(Just expr_ty) = 
+    finalize (e, wc, rs) ty@(Just expr_ty) =
       EFC (parenthesizeHsExpr appPrec e) (listToBag (relevantCts expr_ty wc)) rs ty
     -- Taken from TcHoleErrors, which is sadly not exported. Takes a type and
     -- a list of constraints and filters out irrelvant constraints that do not
@@ -309,5 +445,84 @@ data ExprFitCand = EFC
     efc_ty :: Maybe Type
   }
 
-instance Show ExprFitCand where 
-  show (EFC c w id t) = show c  
+instance Show ExprFitCand where
+  show (EFC c w id t) = show c
+
+
+{- data MatchGroup p body
+  = MG { mg_ext     :: XMG p body -- Post-typechecker, types of args and result
+       , mg_alts    :: XRec p [LMatch p body]  -- The alternatives
+       , mg_origin  :: Origin } -}
+
+
+patToGuard :: (Data (HsBindLR GhcPs GhcPs)) => HsModule -> HsModule
+patToGuard = transformBi $ \e -> case e :: HsBindLR GhcPs GhcPs of
+     f@(FunBind {fun_matches = mg}) -> f  {fun_matches = rewriteFbCase mg}
+
+
+decls :: HsModule -> [LHsDecl GhcPs]
+decls = hsmodDecls
+
+
+-- | Rewrite function bindings to a pattern binding with a case:
+--   f x = 1 ; f (x:xs) = 1 + f xs   =>   f = \x -> case x of x -> 1 ; (x:xs) -> 1 + f xs
+rewriteFbCase :: MatchGroup GhcPs (LHsExpr GhcPs) -> MatchGroup GhcPs (LHsExpr GhcPs)
+rewriteFbCase = \case
+           m@MG {mg_alts = L s alts} -> m {mg_alts = L s (rewriteAlts alts)}
+
+rewriteAlts :: [LMatch GhcPs (LHsExpr GhcPs)] -> [LMatch GhcPs (LHsExpr GhcPs)]
+rewriteAlts [] = []
+rewriteAlts ((L s (Match p f@(FunRhs {}) [L sp b]  r)):ms) = L s (Match p f [L sp (VarPat NoExtField fresh)] (rr r)):rewriteAlts ms
+rewriteAlts ((L s (Match p CaseAlt [L sp b] r)):ms) = undefined
+
+rr :: GRHSs GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)) -> GRHSs GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs))
+rr g@GRHSs{grhssGRHSs = l} = g {grhssGRHSs = map match l}
+  where
+    match :: LGRHS GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)) -> LGRHS GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs))
+    match = transformBi $ \v -> case v :: (HsExpr GhcPs) of  -- if no guarded statements 
+        (HsVar n (L sp name)) -> HsVar n fresh
+        (HsApp l (L s (HsVar n f)) (L s' (HsVar n2 f2))) -> HsApp l (L s (HsVar n f)) (L s' (HsVar n2 f2))
+        e -> e
+
+fresh2 :: LIdP GhcPs -> LIdP GhcPs
+fresh2 (L srcAnn n) = fresh
+
+fresh :: LIdP GhcPs
+fresh = L srcAnn (makeId "fresh")
+      where srcAnn = SrcSpanAnn { ann = ep, locA = mkGeneralSrcSpan (mkFastString ("Loc "))}
+            ep :: EpAnn NameAnn
+            ep = EpAnnNotUsed
+
+
+makeId :: String -> RdrName
+makeId n = nameRdrName name
+        where uq     = mkUnique 'a' 1
+              name   = mkInternalName uq (mkOccName Occ.varName n) (mkGeneralSrcSpan (mkFastString ("Loc " ++ n)))
+
+mkName :: String -> TH.Name
+mkName n = TH.Name occn nfl
+  where occn = TH.mkOccName n
+        nfl  = TH.NameS
+
+getPats :: TH.Clause -> [TH.Pat]
+getPats (TH.Clause ps _ _) = ps
+
+match :: TH.Pat -> TH.Body -> [TH.Dec] -> TH.Match
+match = TH.Match
+
+{- rewriteFbsCase :: Q Exp -> Q Exp 
+rewriteFbsCase d@(TH.FunD name clauses) = do
+      names <- replicateM (length pats) (TH.newName "x")
+      return $ TH.FunD name $ TH.Clause [] TH.NormalB $ TH.LamE (map TH.VarP names) 
+                                                        (TH.CaseE (TH.TupE $ map (Just . TH.VarE) names) (map match pats))
+                                                  
+  where
+    pats = concatMap getPats clauses  -}
+                    {- $ (TH.LamE (map TH.VarP ids) 
+                            (TH.CaseE (TH.TupE $ map (Just . TH.VarE) ids) 
+                                  (pats))) []-}
+
+
+
+---- 
+

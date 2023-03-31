@@ -1,5 +1,4 @@
-module Mod3 where 
-
+module Mod4 where 
 
 f :: [Int] -> Int
 f []  = 1

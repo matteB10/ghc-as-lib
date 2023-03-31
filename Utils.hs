@@ -39,6 +39,12 @@ showGhc :: (Outputable a) => DynFlags -> a -> String
 -- | Pretty print ghc stuff 
 showGhc = showPpr 
 
+showGhcUnsafe :: (Outputable a) => a -> String  
+showGhcUnsafe = showSDocUnsafe . ppr 
+
+printGhc :: (Outputable a) => a -> IO ()
+printGhc = putStrLn . showGhcUnsafe
+
 banner :: [Char] -> IO ()
 banner msg = putStrLn $ "\n\n--- " ++ msg ++ " ---\n\n"
 
@@ -53,6 +59,7 @@ varNameUnique :: Var -> String
 varNameUnique = showSDocUnsafe . ppr 
 
 typeE :: Expr Var -> Type
+-- TODO: CHEK OUT `exprType` in GHC
 -- | Experimental function returning the type of a Core expr
 typeE (Var id)       = varType id
 typeE (Type t)       = t

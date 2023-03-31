@@ -2,4 +2,4 @@
 module Mod1 where 
 
 myreverse [] = []
-myreverse (x:xs) = myreverse xs ++ [x]
+myreverse (x:xs) = _ xs ++ [x]

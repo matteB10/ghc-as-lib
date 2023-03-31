@@ -92,10 +92,11 @@ import Control.Monad (when)
 
 import Similar
 import Instance 
-import Transform (applymany, etaRed, alpha, removeModInfo, replaceHoles, rewriteRec)
+import Transform (etaReduce, alpha, removeModInfo, replaceHoles, rewriteRec, normalise, normalise')
 import Utils 
-import GHC.Core.Opt.Monad (CoreToDo (CoreDoNothing, CoreDoSimplify, CoreDesugarOpt, CoreDoRuleCheck))
-import GHC.Utils.Binary (UserData(ud_get_fs))
+import GHC.Core.Opt.Monad (CoreToDo (..))
+import GHC.Core.Opt.Pipeline (core2core)
+
 
 
 {- DynFlags plugin options
@@ -139,6 +140,15 @@ holeFlags =
     Opt_UnclutterValidHoleFits
   ]
 
+simplFlags :: [GeneralFlag]
+-- | Set flags for simplification pass 
+simplFlags = []{-[Opt_FloatIn
+             ,Opt_LiberateCase
+             ,Opt_DoEtaReduction
+             ,Opt_CaseMerge
+             ,Opt_EnableRewriteRules
+             ]-}
+
 genFlags :: [GeneralFlag]
 genFlags = [Opt_DeferTypedHoles
            ,Opt_DoEtaReduction
@@ -151,19 +161,18 @@ compExpr expr = runGhc (Just libdir) $ do
   e <- parseExpr expr
   undefined 
 
-setFlags :: Bool -> Ghc DynFlags 
-setFlags b = do 
+setFlags :: Bool -> [GeneralFlag] -> Ghc DynFlags 
+setFlags b flags = do 
    dflags <- getSessionDynFlags 
    let dflags' = EnumSet.delete Opt_KeepOFiles $ EnumSet.delete Opt_KeepHiFiles (generalFlags dflags) 
-   let flags = if b then EnumSet.toList (generalFlags dflags) ++ addFlags else addFlags  
-       addFlags = holeFlags ++ genFlags
+   let flags' = if b then EnumSet.toList (generalFlags dflags) ++ flags else flags   
        dflags'  = dflags {refLevelHoleFits = Just 2,
                           maxValidHoleFits = Just 8,
                           maxRefHoleFits   = Just 15,
-                          generalFlags = EnumSet.fromList flags} 
+                          generalFlags = EnumSet.fromList flags'} 
    return dflags'   
 
-compilePrint :: FilePath -> IO (CoreProgram, CoreProgram)
+compilePrint :: FilePath -> IO ()
 -- | Compile to Core, print information from all passes and some additional information
 compilePrint file = runGhc (Just libdir) $ do
   env <- getSession  
@@ -228,11 +237,6 @@ compilePrint file = runGhc (Just libdir) $ do
   let modInf = modInfoExports (moduleInfo tmod) 
   liftIO $ putStrLn $ showGhc dflags' ( modInfoExports (moduleInfo tmod) )
 
-  let norm = applymany etaRed (removeModInfo coreprog)
-  let rew = rewriteRec "factorial" norm  
-  liftIO $ banner "Rewrite"
-  liftIO $ print (rew)
-
   liftIO $ banner "Core Module"
   liftIO $ putStrLn $ showGhc dflags' coreprog
 
@@ -243,15 +247,13 @@ compilePrint file = runGhc (Just libdir) $ do
   -- test if core-to-core transformations introduced errors 
   let coretodo = CoreDoNothing 
   env <- getSession 
-  let (x:xs) = coreprog
-  liftIO $ lintPassResult env coretodo (x:xs)  
+  liftIO $ lintPassResult env coretodo coreprog  
 
   liftIO $ banner "Print literals" -- print literals (to see hole fit candidates)
   liftIO $ putStrLn $ findLiterals coreprog
 
   liftIO $ banner "Print hole loc"
   liftIO $ printHoleLoc coreprog
-  return (removeModInfo coreprog, rew)
 
 
 compToFile :: (FilePath -> IO CoreProgram) -> FilePath -> IO ()
@@ -266,7 +268,7 @@ compToTc :: FilePath -> IO TypecheckedSource
 -- | Compile to typechecked program (parsing, renaming, typechecking)
 compToTc fp = runGhc (Just libdir) $ do
   env <- getSession
-  dflags <- setFlags False 
+  dflags <- setFlags False (holeFlags  ++ genFlags)
   setSessionDynFlags dflags
   target <- guessTarget fp Nothing
   setTargets [target]
@@ -278,14 +280,12 @@ compToTc fp = runGhc (Just libdir) $ do
   liftIO $ putStrLn $ showGhc dflags tprogram
   return tprogram 
 
-c :: CoreToDo
-c = undefined
 
 compSimpl :: Bool -> FilePath -> IO CoreProgram
 -- | Compile coreprogram, after simplifier pass 
 compSimpl use_defaultflags file = runGhc (Just libdir) $ do
   env <- getSession 
-  dflags <- setFlags use_defaultflags -- set dynflags 
+  dflags <- setFlags use_defaultflags (holeFlags ++ genFlags) -- set dynflags 
   setSessionDynFlags dflags 
   simpl <- compileToCoreSimplified file
   return (cm_binds simpl)
@@ -294,10 +294,32 @@ compSimplAnal :: FilePath -> IO CoreProgram
 -- | Compile with simplifier and see simplifier stats 
 compSimplAnal fp =  runGhc (Just libdir) $ do
   env <- getSession 
-  dflags <- setFlags False -- set dynflags 
+  dflags <- setFlags False (holeFlags ++ genFlags)-- set dynflags 
   setSessionDynFlags (dopt_set dflags Opt_D_dump_simpl_stats) -- set flag for simplification stats  
   simpl <- compileToCoreSimplified fp
   return (cm_binds simpl)
+
+compSetSimplPass :: FilePath -> IO CoreProgram 
+-- | Try to set specific simplifier passes with general flags
+-- which does not seem to work 
+compSetSimplPass fp = runGhc (Just libdir) $ do
+    dflags <- setFlags False (holeFlags ++ genFlags ++ simplFlags) 
+    setSessionDynFlags (gopt_set dflags Opt_DoCoreLinting) 
+    dflags' <- getSessionDynFlags
+    target <- guessTarget fp Nothing
+    setTargets [target]
+    load LoadAllTargets
+    modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
+    env <- getSession 
+    pmod <- parseModule modSum 
+    tmod <- typecheckModule pmod 
+    dmod <- desugarModule tmod 
+    coremod' <- liftIO $ core2core env (dm_core_module dmod) -- should depend on which general flags are set
+    let coretodo = CoreDoPasses [CoreLiberateCase, CoreDoFloatInwards, CoreDesugarOpt] -- just try to do next core pass 
+    env <- getSession 
+    -- typecheck core after simplification
+    liftIO $ lintPassResult env coretodo (mg_binds coremod')
+    return $ mg_binds coremod'
 
   
 
@@ -305,30 +327,48 @@ compCore :: Bool -> FilePath -> IO CoreProgram
 -- | Compile to coreprogram, after desugaring pass, before simplifier 
 compCore b fp = runGhc (Just libdir) $ do
   env <- getSession
-  dflags <- setFlags b 
+  dflags <- setFlags b (holeFlags ++ genFlags)
   setSessionDynFlags dflags
   coremod <- compileToCoreModule fp
-  return (removeModInfo $ cm_binds coremod)
+  return $ cm_binds coremod 
 
+
+compNormNoRename :: FilePath -> IO CoreProgram 
+compNormNoRename fp = runGhc (Just libdir) $ do
+    dflags <- setFlags False (holeFlags ++ genFlags ++ simplFlags) 
+    setSessionDynFlags (gopt_set dflags Opt_DoCoreLinting) 
+    dflags' <- getSessionDynFlags
+    coremod' <- liftIO $ compCore False fp 
+    let fname = takeWhile (/= '/') fp                        -- but seems to do a lot of simplifications anyway 
+        normalised_prog = normalise' fname coremod'
+        coretodo = CoreDoPasses [CoreDesugarOpt] -- just try to do next core pass 
+    env <- getSession 
+    -- typecheck core after transformation (except renaming transformations)
+    -- since GHC's Subst environment is not updated when renaming 
+    liftIO $ lintPassResult env coretodo (normalised_prog)
+    return normalised_prog
+
+
+compNorm :: FilePath -> IO CoreProgram 
+compNorm fp = do  
+    p <- compCore False fp 
+    let fname = takeWhile (/= '/') fp 
+    return $ normalise fname p 
+
+  
 compileAndNormalise :: ExerciseName -> (FilePath -> IO CoreProgram) -> FilePath -> IO [CoreProgram]
 -- | Compile file and apply transformations, return program from each step  
 compileAndNormalise name compile fp = do
   cp <- compile fp 
-  let rcp = removeModInfo cp  -- module info removed
-  let ecp = applymany etaRed rcp -- manual eta reduce 
+  let rcp  = removeModInfo cp   -- module info removed
+  let ecp  = etaReduce rcp      -- manual eta reduce 
   let ecp' = replaceHoles ecp 
   let rrp  = rewriteRec name ecp' 
-  let acp = alpha name ecp'    -- alpha renamed, needs to know the name of the exercise for desugar (that we dont want to rename)
-  return [cp,rcp,ecp',rrp,acp]     -- return coreprogram of every transformation step 
+  let acp  = alpha name ecp'    -- alpha renamed, needs to know the name of the exercise for desugar (that we dont want to rename)
+  return [cp,rcp,ecp',rrp,acp]  -- return coreprogram of every transformation step 
 
 
-compNormalisedPrint :: ExerciseName -> (FilePath -> IO CoreProgram) -> FilePath -> IO ()
-compNormalisedPrint name compile fp = do
-    [p,rp,ep,ap] <- compileAndNormalise name compile fp 
-    banner "Compiled program" >> print p 
-    banner "Remove mods" >> print rp 
-    banner "Eta-reduce" >> print ep 
-    banner "Alpha-rename" >> print ap 
+
 
 
 {-

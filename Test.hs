@@ -47,7 +47,7 @@ testPr n (t:ts) = testPr' n t >> testPr n ts
           putStrLn  "Simplifier:"
           putStr "programs match: " >> compare_simpl ps >>= print 
           putStrLn  "Manual transformations:"
-          putStr "programs match: " >> compare_norm n ps >>= print  
+          putStr "programs match: " >> compare_norm ps >>= print  
 
 testPrA :: ExerciseName -> [(FilePath,FilePath)] -> IO () 
 -- | Test and print all  
@@ -57,7 +57,7 @@ testPrA n ps = do
   putStrLn  "Simplifier:"
   putStr "programs match" >> mapM compare_simpl ps >>= print 
   putStrLn  "Manual transformations:"
-  putStr "programs match" >> mapM (compare_norm n) ps >>= print 
+  putStr "programs match" >> mapM compare_norm ps >>= print 
 
 
 comparePrint :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO ()
@@ -80,25 +80,19 @@ comparePrint compile fp1 fp2 = do
   print cp2
   putStrLn $ "Programs match: " ++ show (cp1 ~== cp2)
 
-compare_ :: (FilePath -> IO CoreProgram) -> (CoreProgram -> CoreProgram) -> FilePath -> FilePath -> IO Bool 
-compare_ comp_pass transf fp1 fp2 = do
+compare_ :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO Bool 
+compare_ comp_pass fp1 fp2 = do
   cp1' <- comp_pass fp1
-  let cp1 = transf (removeModInfo cp1')
+  let cp1 = removeModInfo cp1'
   cp2' <- comp_pass fp2
-  let cp2 = transf (removeModInfo cp2')
+  let cp2 = removeModInfo cp2'
   return (cp1 ~== cp2)
 
 
-compare_desugar, compare_simpl :: (FilePath,FilePath) -> IO Bool 
-compare_desugar = uncurry $ compare_ (compCore False) id 
-compare_simpl = uncurry $ compare_ (compSimpl False) id 
-compare_norm :: String -> (FilePath,FilePath) -> IO Bool 
-compare_norm fname = uncurry $ compare_ (compCore False) (alpha fname . rewriteRec fname . applymany etaRed . replaceHoles . removeModInfo)
-
-
-compileNorm :: String -> FilePath -> IO CoreProgram
-compileNorm fname fp = compCore False fp >>= \p -> return $ alpha fname $ rewriteRec fname $ applymany etaRed $ replaceHoles $ removeModInfo p 
-
+compare_desugar, compare_simpl, compare_norm :: (FilePath,FilePath) -> IO Bool 
+compare_desugar = uncurry $ compare_ (compCore False) 
+compare_simpl = uncurry $ compare_ (compSimpl False)  
+compare_norm = uncurry $ compare_ compNorm
 
 matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
 matchSuffixedFiles folderPath = do
@@ -138,7 +132,5 @@ t = compCore False "other/good/Test.hs"
 ct :: IO CoreProgram 
 ct = do 
   t <- compCore False "myreverse/good/Test3.hs"
-  let t' = removeModInfo t
-      t'' = applymany etaRed t' 
-      rt = rewriteRec "myreverse" t'' 
-  return rt 
+  let t' = normalise "myreverse" t  
+  return t'  

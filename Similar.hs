@@ -13,7 +13,6 @@ import GHC.Types.Name (getOccString, occNameString)
 import GHC.Data.FastString (fsLit)
 
 import Debug.Trace ( trace )
-import Instance
 import GHC.Core.TyCon (TyCon)
 import Control.Monad (when)
 import Data.Maybe (isNothing)
@@ -21,7 +20,7 @@ import GHC.Core.DataCon (DataCon(..), dataConName)
 import GHC.Utils.Outputable (showSDocUnsafe, Outputable (ppr))
 import GHC.Types.Literal (Literal(..), LitNumType)
 
-import Utils 
+import Utils ( isHole', isHoleExpr, sp) 
 
 class Similar a where
     (~==) :: a -> a -> Bool
@@ -42,7 +41,7 @@ instance Similar (Bind Var) where
 
 instance Similar (Expr Var) where
     (Var id) ~== (Var id')                  = --trace "ID" 
-                                              id ~== id
+                                              id ~== id'
     (Type t) ~== (Type t')                  = --trace "TYPE" 
                                               t ~== t'
     (Lit l)  ~== (Lit l')                   = --trace ("LIT" `sp` show l `sp` show l')
@@ -68,15 +67,12 @@ instance Similar CoercionR where
     c ~== c' = True -- how should this be checked?
 
 instance Similar Literal where 
-  --(LitString l) ~== li                  = True 
-  --(LitChar c) ~== li                    = True 
+  (LitString l) ~== (LitString l')      = l == l' 
+  (LitChar c) ~== (LitChar c')          = c == c'  
   (LitNumber ti i) ~== (LitNumber tj j) = ti == tj && i == j 
   (LitFloat r) ~== (LitFloat p)         = r == p  
   (LitDouble r) ~== (LitDouble p)       = r == p 
   l ~== k                               = True 
-
-r :: Rational 
-r = undefined 
 
 instance Similar [Alt Var] where 
     xs ~== ys = all (uncurry (~==)) (zip xs ys)
@@ -90,7 +86,7 @@ instance Similar [Var] where
 
 instance Similar AltCon where
     (DataAlt a) ~== (DataAlt a') = a ~== a'  
-    (LitAlt l)  ~== (LitAlt l')  = True -- literals will probably never match
+    (LitAlt l)  ~== (LitAlt l')  = l ~== l -- literals will probably never match
     _           ~== _ = True -- DEFAULT 
 
 instance Similar DataCon where 
@@ -106,27 +102,8 @@ instance Similar Type where
                     show k1 == show k2  -- to disregard uniques of typevars from different programs (after renaming we might be able to use eqType)
         --trace ("type1:" ++ show k1 `nl` "type2:" ++ show k2) show k1 == show k2 ----ugly hack with show, eqType seems to give error in some cases where type is similar 
 
- ------------------------------------
+-- ==================
 
-{- Core Expr 
-data Expr b
-  = Var   Id
-  | Lit   Literal
-  | App   (Expr b) (Arg b)
-  | Lam   b (Expr b)
-  | Let   (Bind b) (Expr b)
-  | Case  (Expr b) b Type [Alt b]   -- See Note [Case expression invariants]
-                                    -- and Note [Why does Case have a 'Type' field?]
-  | Cast  (Expr b) CoercionR        -- The Coercion has Representational role
-  | Tick  CoreTickish (Expr b)
-  | Type  Type
-  | Coercion Coercion
-  deriving Data
--}
-
-
--- =======================================================================
--- 
 instance Eq (Bind Var) where 
     (Rec es) == (Rec xs) = and $ concatMap (\(x,x') -> map (\(y,y') -> x `eqVar` y && x' == y') es) xs 
     (NonRec v b) == (NonRec i c) = v `eqVar` i && b == c 

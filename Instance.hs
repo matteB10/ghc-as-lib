@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Instance where
 -- | Module containing Show instances for GHC types
@@ -38,8 +39,8 @@ import GHC.Tc.Errors.Hole.FitTypes (TypedHole(..), HoleFitPlugin(..), FitPlugin(
 import GHC.Tc.Types.Constraint (Hole(..), HoleSort(..), Implication, CtLoc, Cts)
 import GHC.Tc.Types.Evidence (HoleExprRef (..), HsWrapper, TcEvBinds, QuoteWrapper)
 import GHC.Types.Unique.Set (UniqSet, pprUniqSet)
-import GHC.Core (Bind(..), Expr(..), Alt(..), AltCon(..))
-import GHC.Unit.Module.Warnings (Warnings(..), pprWarningTxtForMsg)
+import GHC.Core (Bind(..), Expr(..), Alt(..), AltCon(..), CoreProgram, CoreBind, CoreExpr)
+import GHC.Unit.Module.Warnings (Warnings(..), pprWarningTxtForMsg, WarningTxt)
 import GHC.Types.TyThing (TyThing(..))
 import GHC.Core.Coercion.Axiom (CoAxiom)
 import GHC.Core.ConLike (ConLike)
@@ -53,11 +54,13 @@ import Data.List (intersperse, intercalate)
 
 -- == for hsSyn == 
 import GHC.Data.Bag (Bag(..), bagToList, unitBag, isEmptyBag)
-import GHC.Base (leInt)
-import GHC.Plugins (IdInfo, showSDoc)
+import GHC.Plugins (IdInfo, showSDoc, ShHoleSubst)
 import GHC.IORef (IORef)
 import Data.Void (Void)
+import Data.Generics.Uniplate.Data ( Biplate )
 -- ===============
+
+-- Look at GHC.Unit.State 
 
 deriving instance Show HoleFitPlugin
 deriving instance Show Hole
@@ -181,8 +184,15 @@ instance Show DynFlags where
 instance Show (EnumSet GeneralFlag) where
   show e = intercalate ", \n" (map show (toList e))
 
+-- | A convenient shorthand notation for Biplate constraints
+class ( Biplate b CoreProgram, Biplate b CoreBind, Biplate b CoreExpr) 
+      => BiplateFor b
+instance BiplateFor CoreProgram      where
+instance BiplateFor CoreBind         where
+instance BiplateFor CoreExpr         where
 
--- =========== SHOW INSTANCE FOR HSSYN
+
+-- =========== SHOW INSTANCE FOR HSSYN ===============================================================
 
 instance Show a => Show (Bag a) where
   show b | isEmptyBag b     = "EmptyBag"
@@ -239,9 +249,73 @@ deriving instance Show HsIPName
 deriving instance Show RecordUpdTc
 deriving instance Show HsTupleSort
 deriving instance Show HsTyLit
-deriving instance Show GhcPs
 
-instance Show (HsDecl GhcPs) where show a = showSDocUnsafe $ ppr a
+
+instance Show (HsDecl GhcPs) where
+  show (TyClD t1 t2) = "TyClD " ++ showO t1 `sp` showO t2      -- ^ Type or Class Declaration
+  show (InstD d1 d2) = "InstD " ++ showO d1 `sp` showO d2     -- ^ Instance declaratin
+  show (DerivD d1 d2) = "DerivD " ++ showO d1 `sp` showO d2   -- ^ Deriving declaration
+  show (ValD v1 v2) = "valD " ++ show v1 `sp` show v2    -- ^ Value declaration
+  show (SigD s1 s2) = "SigD " ++ showO s1 `sp` showO s2    -- ^ Signature declaration
+  show a = showSDocUnsafe $ ppr a 
+
+--deriving instance Show (HsBind GhcPs)
+--deriving instance Show (MatchGroup GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
+--deriving instance Show (GRHSs GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
+
+instance Show (HsRecFields GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs))) where show = showO 
+instance Show (HsOverLit GhcPs) where show = showO 
+instance Show (HsPatSigType (GhcPass 'Parsed)) where show = showO
+instance Show EpAnnSumPat where show a = "" 
+instance Show (HsConDetails Void (GenLocated SrcSpanAnnN RdrName) [RecordPatSynField GhcPs]) where show a = ""
+instance Show (HsPatSynDir GhcPs) where show a = ""
+instance Show (HsRecField' (AmbiguousFieldOcc GhcPs) (GenLocated SrcSpanAnnA (HsExpr GhcPs))) where show a = ""
+instance Show (HsRecField' (FieldLabelStrings GhcPs) (GenLocated SrcSpanAnnA (HsExpr GhcPs))) where show a = ""
+instance Show (HsWildCardBndrs
+                        (GhcPass 'Parsed)
+                        (GenLocated SrcSpanAnnA (HsType (GhcPass 'Parsed)))) where show a = ""
+instance Show (HsWildCardBndrs
+                        (GhcPass 'Parsed)
+                        (GenLocated SrcSpanAnnA (HsSigType (GhcPass 'Parsed)))) where show a = ""
+instance Show (AmbiguousFieldOcc GhcPs) where show a = ""
+instance Show (ArithSeqInfo GhcPs) where show a = ""
+instance Show (HsFieldLabel GhcPs) where show a = ""
+deriving instance Show (HsBindLR GhcPs GhcPs)
+deriving instance (Show (Pat GhcPs))
+deriving instance Show (HsConDetails (HsPatSigType (GhcPass 'Parsed)) (GenLocated SrcSpanAnnA (Pat GhcPs)) (HsRecFields GhcPs (GenLocated SrcSpanAnnA (Pat GhcPs))))
+deriving instance Show (HsRecFields GhcPs (GenLocated SrcSpanAnnA (Pat GhcPs)))
+instance Show (HsRecField' (FieldOcc GhcPs) (GenLocated SrcSpanAnnA (Pat GhcPs))) where show a = ""
+instance Show EpAnnUnboundVar where show a = ""
+instance Show AnnExplicitSum where show a = ""
+instance Show AnnsLet where show a = ""
+
+instance Show AnnsIf where show a = ""
+instance Show AnnProjection where show a = ""
+instance Show EpAnnHsCase where show a = ""
+deriving instance Show (PatSynBind GhcPs GhcPs)
+deriving instance Show (HsExpr GhcPs)
+--deriving instance Show (HsRecField' (FieldLabelStrings GhcPs) (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
+deriving instance Show GhcPs
+deriving instance Show (GRHS GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
+deriving instance Show (GRHSs GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
+deriving instance Show (MatchGroup GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
+deriving instance Show (Match GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
+deriving instance Show (HsMatchContext (GhcPass 'Parsed))
+deriving instance (Show (HsStmtContext (GhcPass 'Parsed)))
+deriving instance Show (StmtLR GhcPs GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
+deriving instance Show (ApplicativeArg GhcPs)
+deriving instance Show (ParStmtBlock GhcPs GhcPs)
+deriving instance Show (HsLocalBindsLR GhcPs GhcPs)
+deriving instance Show (HsValBindsLR GhcPs GhcPs)
+deriving instance Show (NHsValBindsLR (GhcPass 'Parsed))
+deriving instance Show (HsIPBinds GhcPs)
+deriving instance Show (IPBind GhcPs)
+instance Show (ABExport GhcPs) where show a = ""
+
+sp s1 s2 = s1 ++ " " ++ s2 
+
+showO :: Outputable a => a -> String
+showO = showSDocUnsafe . ppr 
 
 instance Show a => Show (EpAnn a) where show a = ""
 
@@ -423,3 +497,15 @@ instance Show HsWrapper where
 instance Show TcEvBinds where
   show t = showSDocUnsafe $ ppr t
 
+
+
+---- INSTANCES FOR PARSED SRC
+deriving instance Show HsModule  
+
+instance Show AnnsModule where show a = ""
+
+instance Show WarningTxt where show a = ""
+instance Show (SrcSpanAnn' (EpAnn AnnPragma)) where show a = ""
+
+instance Show (IE GhcPs) where show imp = ""
+instance Show (ImportDecl GhcPs) where show i = ""

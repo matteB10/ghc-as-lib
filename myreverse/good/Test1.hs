@@ -2,4 +2,4 @@
 module Test1 where 
 
 myreverse [] = []
-myreverse (x:xs) = _ xs ++ [x]
+myreverse (x:xs) = _ ++ [x]
