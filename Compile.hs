@@ -2,6 +2,8 @@
 {-# OPTIONS_GHC -Wno-typed-holes #-}
 {-# HLINT ignore "Use camelCase" #-}
 {-# HLINT ignore "Redundant bracket" #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Compile where
 
@@ -56,20 +58,20 @@ import GHC.CoreToStg (coreToStg)
 import GHC.Types.SourceError ( handleSourceError, SourceError (SourceError))
 import GHC.Types.Error (getErrorMessages, MsgEnvelope)
 import GHC.Core.DataCon (DataCon(..), mkDataCon, dataConName)
-import GHC.Types.Var (Var(..), TyCoVarBinder(..), VarBndr(..), ArgFlag(..), AnonArgFlag, TyCoVar, Specificity(..))
+import GHC.Types.Var (Var(..), TyCoVarBinder(..), VarBndr(..), ArgFlag(..), AnonArgFlag, TyCoVar, Specificity(..), idDetails, setIdExported)
 import GHC.Types.Literal (Literal(..), LitNumType, pprLiteral)
 import GHC.Types.Basic (FunctionOrData (IsFunction, IsData))
 import GHC.Types.Tickish ( CoreTickish )
 import GHC.Core.TyCon (TyCon(..))
-import GHC.Core.TyCo.Rep (Type(..), CoercionR, TyLit(..), TyCoBinder)
+import GHC.Core.TyCo.Rep (Type(..), CoercionR, TyLit(..), TyCoBinder, mkTyVarTy)
 import GHC.Types.Name (Name(..), isHoleName, nameStableString, OccName, getSrcLoc, NamedThing (getName), pprOccName, pprDefinedAt, getOccString, nameUnique, HasOccName (occName), isDataConName, isTyConName, isTyVarName, isSystemName)
 import GHC.Tc.Types (TcGblEnv(..))
 import GHC.Core.Lint 
 
 import GHC.Tc.Errors.Hole ()
 import GHC.Tc.Errors.Hole.FitTypes ()
-import GHC.Driver.Env (HscEnv(hsc_plugins, hsc_static_plugins, hsc_dflags, hsc_logger))
-import GHC.Driver.Monad (modifySession, Ghc, putMsgM, liftGhcT)
+import GHC.Driver.Env (HscEnv(hsc_plugins, hsc_static_plugins, hsc_dflags, hsc_logger, HscEnv, hsc_IC, hsc_NC))
+import GHC.Driver.Monad (modifySession, Ghc, putMsgM, liftGhcT, withSession)
 import qualified GHC.Data.EnumSet as EnumSet
 import GHC.Utils.Encoding (utf8DecodeByteString)
 import GHC.Tc.Types.Constraint (Cts(..), Implication(..), Hole(..), HoleSort(..), CtLoc)
@@ -83,7 +85,7 @@ import GHC.Unit.Module.Warnings (Warnings (..), pprWarningTxtForMsg)
 import GHC.Types.TyThing (TyThing(..))
 import GHC.Core.Coercion.Axiom (CoAxiom)
 import GHC.Core.ConLike (ConLike)
-import GHC.Data.FastString (fsLit)
+import GHC.Data.FastString (fsLit, mkFastString)
 
 import System.FilePath ( replaceDirectory, takeBaseName )
 import Debug.Trace (trace)
@@ -94,8 +96,22 @@ import Similar
 import Instance 
 import Transform (etaReduce, alpha, removeModInfo, replaceHoles, rewriteRec, normalise, normalise')
 import Utils 
-import GHC.Core.Opt.Monad (CoreToDo (..))
+import GHC.Core.Opt.Monad (CoreToDo (..), getRuleBase, CoreM)
 import GHC.Core.Opt.Pipeline (core2core)
+import GHC.Iface.Ext.Utils (getNameScope)
+import GHC.Core.Opt.Simplify.Env (getSimplRules)
+import GHC.Driver.Plugins 
+import MyPlugin (plugin, install)
+import GHC.Plugins (mkModuleNameFS, ModGuts (ModGuts), Unique, mkLocalVar, IdDetails (VanillaId), mkInternalName, mkOccName, mkGeneralSrcSpan, vanillaIdInfo, mkInScopeSet, mkUniqSet, MonadUnique (getUniqueM), setVarType, extendInScopeSet, unsafeGetFreshLocalUnique, moduleEnvElts, InScopeSet, getInScopeVars, getUniqSet, eltsUFM, mkGlobalVar, isFunTy, Uniquable (getUnique), idInfo, exprType)
+import Control.Monad.Trans.State (StateT (runStateT), get, put)
+import qualified GHC.Types.Name.Occurrence as Occ
+import Data.Generics.Uniplate.Data
+import Control.Monad.Trans.Class (lift)
+import Data.Maybe (fromJust)
+import GHC.Runtime.Context (extendInteractiveContextWithIds, icInScopeTTs)
+import Data.Data (Data)
+import Data.IORef (readIORef)
+import GHC.Types.Name.Cache (NameCache(..))
 
 
 
@@ -141,13 +157,14 @@ holeFlags =
   ]
 
 simplFlags :: [GeneralFlag]
--- | Set flags for simplification pass 
-simplFlags = []{-[Opt_FloatIn
-             ,Opt_LiberateCase
-             ,Opt_DoEtaReduction
-             ,Opt_CaseMerge
-             ,Opt_EnableRewriteRules
-             ]-}
+-- | Set flags for simplification pass  
+simplFlags = [
+            --Opt_FloatIn
+             --,Opt_LiberateCase
+             Opt_DoLambdaEtaExpansion
+             --,Opt_CaseMerge
+             --,Opt_EnableRewriteRules
+             ]
 
 genFlags :: [GeneralFlag]
 genFlags = [Opt_DeferTypedHoles
@@ -304,24 +321,58 @@ compSetSimplPass :: FilePath -> IO CoreProgram
 -- which does not seem to work 
 compSetSimplPass fp = runGhc (Just libdir) $ do
     dflags <- setFlags False (holeFlags ++ genFlags ++ simplFlags) 
+    --let dflags' = dflags {pluginModNames = [mkModuleNameFS $ fsLit "Plugins1.MyPlugin"]}
     setSessionDynFlags (gopt_set dflags Opt_DoCoreLinting) 
     dflags' <- getSessionDynFlags
     target <- guessTarget fp Nothing
     setTargets [target]
     load LoadAllTargets
+    --loadWithPlugins target [StaticPlugin $ PluginWithArgs
+    --        { paArguments = [],
+    --          paPlugin = plugin
+    --        }]
     modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
     env <- getSession 
     pmod <- parseModule modSum 
     tmod <- typecheckModule pmod 
     dmod <- desugarModule tmod 
-    coremod' <- liftIO $ core2core env (dm_core_module dmod) -- should depend on which general flags are set
-    let coretodo = CoreDoPasses [CoreLiberateCase, CoreDoFloatInwards, CoreDesugarOpt] -- just try to do next core pass 
-    env <- getSession 
+    names <- getNamesInScope 
+    let coremod = dm_core_module dmod 
+    --liftIO $ putStrLn $ showSDocUnsafe $ ppr names -- no names in scope?? prints nohing 
+    let mguts     = dm_core_module dmod  
+        --coreprog  = mg_binds mguts 
+    (mguts',env') <- repHoles mguts 
+    liftIO $ print "INSCOPE VARIABLES"
+    liftIO $ print $ interactiveInScope $ hsc_IC env' 
+    --n <- liftIO $ readIORef $ hsc_NC env  
+    --liftIO $ putStr $ showSDocUnsafe $ ppr $ moduleEnvElts (nsNames n) -- this is like the prelude, huge output
+        --mguts'    = mguts {mg_binds = coreprog'} 
+    --coremod' <- liftIO $ core2core env (mguts') -- should depend on which general flags are set
+    let coretodo = CoreDoPasses [CoreDesugarOpt] -- just try to do next core pass 
+    --env <- getSession 
     -- typecheck core after simplification
-    liftIO $ lintPassResult env coretodo (mg_binds coremod')
-    return $ mg_binds coremod'
-
+    --liftIO $ print $ removeModInfo $ mg_binds mguts' 
+    liftIO $ lintPassResult env coretodo (mg_binds mguts')
+    return $ removeModInfo $ mg_binds mguts'
   
+  
+--loadWithPlugins :: GhcMonad m => [StaticPlugin] -> m SuccessFlag
+loadWithPlugins t the_plugins = do
+      -- first unload (like GHCi :load does)
+      GHC.setTargets []
+      _ <- GHC.load LoadAllTargets
+
+      --target <- guessTarget "MyPlugin.hs" Nothing
+      setTargets [t] 
+
+      modifySession $ \hsc_env ->
+        let old_plugins = hsc_static_plugins hsc_env
+        in hsc_env { hsc_static_plugins = old_plugins ++ the_plugins} 
+
+      dflags <- getSessionDynFlags
+      setSessionDynFlags dflags { outputFile_ = Nothing }
+      load LoadAllTargets
+
 
 compCore :: Bool -> FilePath -> IO CoreProgram
 -- | Compile to coreprogram, after desugaring pass, before simplifier 
@@ -341,7 +392,7 @@ compNormNoRename fp = runGhc (Just libdir) $ do
     coremod' <- liftIO $ compCore False fp 
     let fname = takeWhile (/= '/') fp                        -- but seems to do a lot of simplifications anyway 
         normalised_prog = normalise' fname coremod'
-        coretodo = CoreDoPasses [CoreDesugarOpt] -- just try to do next core pass 
+        coretodo = CoreDoPasses [CoreDesugarOpt, CoreDesugar] -- just try to do next core pass 
     env <- getSession 
     -- typecheck core after transformation (except renaming transformations)
     -- since GHC's Subst environment is not updated when renaming 
@@ -400,3 +451,69 @@ coreDumpFlag (CoreDoRuleCheck {})     = Nothing
 coreDumpFlag CoreDoNothing            = Nothing
 coreDumpFlag (CoreDoPasses {})        = Nothing
 -}
+
+repHoles :: ModGuts -> Ghc (ModGuts, HscEnv)
+repHoles mg@ModGuts {mg_binds = prog} = do
+  env <- getSession 
+  let ic = hsc_IC env 
+  let inscopeVars = interactiveInScope ic 
+  (prog',inscopeVars') <- replaceHoles (mkInScopeSet $ mkUniqSet inscopeVars) prog
+  let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars inscopeVars')
+  let env' = env {hsc_IC = ic'}
+  modifySession $ const env'
+  return $ (mg {mg_binds = prog'},env')
+        where replaceHoles :: InScopeSet -> CoreProgram -> Ghc (CoreProgram,InScopeSet)
+              -- | Replace expressions representing holes with hole variables of the same type 
+              replaceHoles is cs = runStateT (tr cs) is
+                where tr :: CoreProgram -> StateT InScopeSet Ghc CoreProgram
+                      tr = transformBiM $ \case
+                        c@(Case e v t _) | isHoleExpr c -> 
+                                                           let id = fromJust (getTypErr e)
+                                                           in newHoleVar t >>= \i -> return $ Var i
+                                         | otherwise -> return c
+                        e -> return e
+
+rewriteCase :: Var -> Expr Var -> Expr Var 
+rewriteCase id (Case e v t _) = extract e t id 
+
+extract :: Expr Var -> Type -> Var -> Expr Var 
+extract (App e (Var te)) t v | getOccString te == "typError" = App (App e (Var v)) (Type $ ft_arg t)
+
+newHoleVar :: Type -> StateT InScopeSet Ghc Var
+newHoleVar t = do
+    is <- get
+    --let is = mkInScopeSet $ mkUniqSet vars
+    --uq <- lift getUniqueM
+    let uq = unsafeGetFreshLocalUnique is
+    let is' = case t of 
+          (TyVarTy tv) -> extendInScopeSet is' tv 
+          typ          -> is 
+    --let uq = getUnique v 
+    let name = "hole"
+        id   = setIdExported $ setVarType (makeVar uq t name) t  
+        is'' = extendInScopeSet is' id
+    put is''
+    return id
+
+
+-- check function newLocal :: FastString -> ScaledType -> UniqSM Id from GHC.Types.Id.Make 
+
+{- newHoleVar :: Id -> Type -> Ctx Id
+newHoleVar id t = do
+    let uq@(c,i) = unpkUnique $ getUnique id
+    j <- freshHNum
+    let name = "hole_"++ show j
+    let id' = setVarType (makeVar id name) t
+    modify $ \s -> s {env = Map.insert id' id' (env s), freshHNum = j+1} -- update map 
+    return id' -}
+
+getTypErr :: Expr Var -> Maybe Var
+getTypErr e = head [Just v | (Var v) <- universe e, getOccString v == "typeError"]
+
+makeVar :: Unique -> Type -> String -> Var 
+makeVar uq t n = mkGlobalVar id_det name typ id_inf
+        where id_det = VanillaId 
+              name   = mkInternalName uq (mkOccName Occ.varName n) (mkGeneralSrcSpan (mkFastString ("Loc " ++ n)))
+              mult   = if isFunTy t then ft_mult t else t 
+              typ    = t
+              id_inf = vanillaIdInfo 

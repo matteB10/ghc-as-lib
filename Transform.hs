@@ -409,6 +409,9 @@ sub v v' = \case
         return (Var v)
     e -> return e 
 
+
+
+
 -- Core Utils 
 -- mkSingleAltCase
 -- needsCaseBInding
@@ -430,3 +433,15 @@ sub v v' = \case
 -- ^ Determines the type resulting from applying an expression with given type
 --- to given argument expressions.
 -- Do I need to do this backwards when eta-reducing?
+
+caseToGuard :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
+caseToGuard = rewriteBi etaRed
+
+
+ctg :: Expr Var ->  Maybe (Expr Var)
+-- | case to guard, e.g. case e of {Just a -> a} => case (e == Just a) of {True -> a}
+ctg (Lam v (App f args)) = 
+   case args of
+      Var v' | v == v' -> return f 
+      _                -> Nothing
+ctg _ = Nothing
