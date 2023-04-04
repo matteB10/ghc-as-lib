@@ -91,8 +91,8 @@ compare_ comp_pass fp1 fp2 = do
 
 compare_desugar, compare_simpl, compare_norm :: (FilePath,FilePath) -> IO Bool 
 compare_desugar = uncurry $ compare_ (compCore False) 
-compare_simpl = uncurry $ compare_ (compSimpl False)  
-compare_norm = uncurry $ compare_ compNorm
+compare_simpl = uncurry $ compare_ compSetSimplPass 
+compare_norm = uncurry $ compare_ compN
 
 matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
 matchSuffixedFiles folderPath = do
