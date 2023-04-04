@@ -244,10 +244,10 @@ repHoles_ :: CoreProgram -> CoreProgram
 repHoles_ prog = evalState (go prog) initSt 
         where go :: CoreProgram -> Ctx CoreProgram
               go = transformBiM $ \case
-                        ex@(App c@(Case e v t _) e2) | isHoleExpr c ->
+                        c@(Case e v t _) | isHoleExpr c ->
                                                            let id = fromJust (getTypErr e)
-                                                           in newHoleVar_ t >>= \id -> return $ App (Var id) e2 
-                                                     | otherwise -> return ex 
+                                                           in newHoleVar_ t >>= \id -> return $ Var id  
+                                         | otherwise -> return c 
                         e -> return e
 
 newHoleVar_ :: Type -> Ctx Id 
