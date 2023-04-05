@@ -175,12 +175,12 @@ etaExpP p = do
     return $ go dflags p
     where go :: DynFlags -> CoreProgram -> CoreProgram
           go df = transformBi $ \ex -> case ex :: CoreExpr of 
-            Let b' e | wantEtaExpansion df e -> eta ex df  
-            e        | wantEtaExpansion df e -> eta e df
+            x@(Let b' e) | wantEtaExpansion df x -> eta x df  
+            e        | wantEtaExpansion df e  -> eta e df
                      | otherwise -> e 
             
           eta expr df = let arit = exprEtaExpandArity df expr -- in new version inscopeset is passed, but not retrieved.
-                                in etaExpandAT arit expr             -- how can we update the inscope set with
+                        in etaExpandAT arit expr             -- how can we update the inscope set with
           {- scope :: CoreProgram -> CoreProgram  -- test if it helps with global ids, 
           scope = transformBi $ \ex -> case ex  :: Expr Var of 
                 (Var v) -> Var (globaliseId v)
@@ -201,8 +201,8 @@ wantEtaExpansion df (Lam b e) | isTyVar b  = wantEtaExpansion df e
 wantEtaExpansion df (App e _)              = wantEtaExpansion df e
 wantEtaExpansion _ (Var v)                 = False 
 wantEtaExpansion _ (Lit {})                = False
-wantEtaExpansion df (Let b e)              = exprArity e < arityTypeArity id_arity 
-    where  id_arity = findRhsArity df (getBindTopVar b) e (exprArity e) 
+wantEtaExpansion df ex@(Let b e)           = exprArity e < arityTypeArity id_arity 
+    where  id_arity = findRhsArity df (getBindTopVar b) ex (exprArity ex) 
 wantEtaExpansion _ _                        = True
 
 
