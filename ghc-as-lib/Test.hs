@@ -9,6 +9,8 @@ import Compile
 import Transform
 import Similar
 import Utils 
+import HoleMatches
+import PrettyPrint
 
 import System.Directory (listDirectory)
 import System.FilePath ((</>), takeDirectory)
