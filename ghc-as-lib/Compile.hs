@@ -378,14 +378,14 @@ compNormSt fp = runGhc (Just libdir) $ do
         coreprog = removeModInfo $ mg_binds coremod 
         fname = takeWhile (/= '/') fp  
     coreProg <- repHoles coreprog -- monadic "replace holes"
-    liftIO $ putStrLn $ "rep holes:\n" ++ show coreProg
-    coreProg' <- rewriteRecGhc fname coreProg -- "inline" binders   
-    liftIO $ putStrLn $ "rewrite rec:\n" ++ show coreProg'
+    coreProg' <- rewriteRecGhc fname coreProg -- "inline" binders  
     coreProg'' <- etaExpP coreProg'
-    liftIO $ putStr $ "eta exp:\n" ++ show coreProg''
-    let renamed = alpha fname coreProg''
-                -- coreProg''
-    return (coreProg', env)   
+    --liftIO $ putStrLn $ "rep holes:\n" ++ show coreProg 
+    --liftIO $ putStrLn $ "rewrite rec:\n" ++ show coreProg'
+    --liftIO $ putStrLn $ "eta exp:\n" ++ show coreProg''
+    let renamed = coreProg'' 
+                --alpha fname coreProg''
+    return (renamed, env)   
 
 compN :: FilePath -> IO CoreProgram 
 compN pr = do 
@@ -395,7 +395,7 @@ compN pr = do
 typeCheckCore :: CoreProgram -> HscEnv -> IO ()
 -- | Use Core Linter to check for problems
 typeCheckCore coreprog env = do 
-   let coretodo = CoreDoPasses [CoreTidy]
+   let coretodo = CoreDoPasses [CoreTidy, CoreDesugar,CoreDesugarOpt]
    liftIO $ lintPassResult env coretodo (coreprog)
 
 compWithPlugins :: FilePath -> IO CoreProgram 

@@ -2,4 +2,4 @@
 module Mod6 where
 
 dupli :: [a] -> [a]
-dupli xs = concatMap (\x -> [x,x]) xs 
+dupli = concatMap (\x -> [x,x]) 

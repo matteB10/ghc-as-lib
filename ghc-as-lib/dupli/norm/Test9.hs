@@ -3,5 +3,5 @@ module Test9 where
 
 
 dupli :: [a] -> [a]
-dupli xs = concatMap _ xs 
+dupli = concatMap _ 
 
