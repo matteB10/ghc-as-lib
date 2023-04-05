@@ -172,9 +172,14 @@ etaExpP p = do
     let ic = hsc_IC env
         inscopeVars = interactiveInScope ic
         is = mkInScopeSet $ mkUniqSet inscopeVars
-    return $ go dflags p
-    where go :: DynFlags -> CoreProgram -> CoreProgram
-          go df = transformBi $ \ex -> case ex :: CoreExpr of 
+    return $ goB dflags p
+    where goB :: DynFlags -> CoreProgram -> CoreProgram 
+          goB df = transformBi $ \bi -> case bi :: CoreBind of 
+                b@(NonRec v e) | wantEtaExpB df v e -> goE df (NonRec v (eta e df))
+                               | otherwise          -> goE df b 
+                b -> goE df b 
+          goE :: DynFlags -> CoreBind -> CoreBind 
+          goE df = transformBi $ \ex -> case ex :: CoreExpr of 
             x@(Let b' e) | wantEtaExpansion df x -> eta x df  
             e        | wantEtaExpansion df e  -> eta e df
                      | otherwise -> e 
@@ -204,6 +209,11 @@ wantEtaExpansion _ (Lit {})                = False
 wantEtaExpansion df ex@(Let b e)           = exprArity e < arityTypeArity id_arity 
     where  id_arity = findRhsArity df (getBindTopVar b) ex (exprArity ex) 
 wantEtaExpansion _ _                        = True
+
+wantEtaExpB :: DynFlags -> Var -> CoreExpr -> Bool 
+wantEtaExpB df v e = ex_arity < arityTypeArity id_arity 
+    where id_arity = findRhsArity df v e ex_arity
+          ex_arity = exprArity e 
 
 
 -- ========= REPLACE HOLES =======
@@ -551,6 +561,8 @@ insertBind n@(NonRec v e) bs = map insertB bs -- inline another nonrec
     where insertB = transformBi $ \case
             (Var v') | v == v' -> e
             e -> e
+
+
 
 --- EXPERIMENTAL STUFF BELOW
 ----------------------------------------------------
