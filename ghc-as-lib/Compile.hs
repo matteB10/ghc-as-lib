@@ -378,10 +378,14 @@ compNormSt fp = runGhc (Just libdir) $ do
         coreprog = removeModInfo $ mg_binds coremod 
         fname = takeWhile (/= '/') fp  
     coreProg <- repHoles coreprog -- monadic "replace holes"
+    liftIO $ putStrLn $ "rep holes:\n" ++ show coreProg
     coreProg' <- rewriteRecGhc fname coreProg -- "inline" binders   
+    liftIO $ putStrLn $ "rewrite rec:\n" ++ show coreProg'
     coreProg'' <- etaExpP coreProg'
-    let renamed = coreProg'' --alpha fname coreProg''
-    return (renamed, env)   
+    liftIO $ putStr $ "eta exp:\n" ++ show coreProg''
+    let renamed = alpha fname coreProg''
+                -- coreProg''
+    return (coreProg', env)   
 
 compN :: FilePath -> IO CoreProgram 
 compN pr = do 

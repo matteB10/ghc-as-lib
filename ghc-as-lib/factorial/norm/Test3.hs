@@ -4,11 +4,12 @@ module Test3 where
 
 -- expects match for all these definitions
 
-factorial :: Integer -> Integer 
-factorial = f 
-    where f :: Integer -> Integer 
-          f 0 = 1 
-          f m = m * f (m - 1)    
+factorial :: (Eq t, Num t) => t -> t 
+factorial = f   
+
+f 0 = 1 
+f m = m * f (m - 1)  
+ 
 
 
 {- factorial :: Integer -> Integer 

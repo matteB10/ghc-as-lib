@@ -2,6 +2,7 @@
 module Mod3 where 
 
 
-factorial :: Integer -> Integer 
-factorial 0 = 1 
-factorial m = m * factorial (m - 1)  
+factorial :: (Eq t, Num t) => t -> t
+factorial = f  
+    where f 0 = 1 
+          f m = m * f (m - 1)

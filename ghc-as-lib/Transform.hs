@@ -38,8 +38,8 @@ import GHC.Core.TyCon (TyCon, mkPrelTyConRepName)
 
 import GHC.Types.SrcLoc ( mkGeneralSrcSpan, srcLocSpan, GenLocated )
 import GHC.Types.Id.Info (IdDetails(VanillaId), vanillaIdInfo, pprIdDetails)
-import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO)
-import GHC.Base ((<|>))
+import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy)
+import GHC.Base ((<|>), Multiplicity)
 import GHC.Data.Maybe (fromJust, liftMaybeT)
 import GHC.Utils.Outputable (Outputable(ppr))
 import GHC.Iface.Ext.Types (pprIdentifier)
@@ -79,10 +79,9 @@ import Instance ( BiplateFor )
 import qualified Data.Map as M
 import Data.Generics.Uniplate (transform)
 import GHC.Driver.Monad (modifySession)
-import GHC.Core.Opt.Arity (etaExpandAT, exprArity, etaExpand, exprEtaExpandArity)
+import GHC.Core.Opt.Arity (etaExpandAT, exprArity, etaExpand, exprEtaExpandArity, arityTypeArity, findRhsArity)
 import GHC.Core.Opt.Simplify.Utils (tryEtaExpandRhs)
 import GHC.Types.Tickish (tickishCounts)
-
 
 
 normalise :: String -> CoreProgram -> CoreProgram
@@ -139,12 +138,14 @@ newVar id = do
     return id'
 
 
-mkExpLocal :: Unique -> Type -> String -> Id
--- | Make exported local var (prevents from being removed as dead code)
-mkExpLocal uq t n = mkExportedLocalVar id_det name t id_inf
-        where id_det = VanillaId
+makeVar' :: Unique -> Type -> String -> Id
+makeVar' uq t n = mkLocalVar id_det name mult typ id_inf
+        where id_det = VanillaId 
               name   = mkInternalName uq (mkOccName Occ.varName n) (mkGeneralSrcSpan (mkFastString ("Loc " ++ n)))
+              mult   = multiplicityTy 
+              typ    = t 
               id_inf = vanillaIdInfo
+            
 
 makeGlobVar :: Unique -> Type -> String -> Id
 makeGlobVar uq t n = mkGlobalVar id_det name t id_inf
@@ -173,12 +174,13 @@ etaExpP p = do
         is = mkInScopeSet $ mkUniqSet inscopeVars
     return $ go dflags p
     where go :: DynFlags -> CoreProgram -> CoreProgram
-          go df = transformBi $ \ex -> case ex of 
-            (Lam v e) | wantEtaExpansion e  -> Lam v (eta e df)
-            e   | wantEtaExpansion e -> eta e df  
-                | otherwise -> e 
+          go df = transformBi $ \ex -> case ex :: CoreExpr of 
+            Let b' e | wantEtaExpansion df e -> eta ex df  
+            e        | wantEtaExpansion df e -> eta e df
+                     | otherwise -> e 
+            
           eta expr df = let arit = exprEtaExpandArity df expr -- in new version inscopeset is passed, but not retrieved.
-                         in etaExpandAT arit expr             -- how can we update the inscope set with
+                                in etaExpandAT arit expr             -- how can we update the inscope set with
           {- scope :: CoreProgram -> CoreProgram  -- test if it helps with global ids, 
           scope = transformBi $ \ex -> case ex  :: Expr Var of 
                 (Var v) -> Var (globaliseId v)
@@ -190,16 +192,18 @@ etaExpP p = do
 -- in previous version, exprIsExpandable would be the equivalent, but returns true in more cases. 
 -- these cases are removed here since a lot of expansions would immediately get reduced again,
 -- if also performing eta-reduction.
-wantEtaExpansion :: CoreExpr -> Bool
+wantEtaExpansion :: DynFlags -> CoreExpr -> Bool
 -- Mostly True; but False of PAPs which will immediately eta-reduce again
 -- See Note [Which RHSs do we eta-expand?]
-wantEtaExpansion (Cast e _)             = wantEtaExpansion e
-wantEtaExpansion (Tick _ e)             = wantEtaExpansion e
-wantEtaExpansion (Lam b e) | isTyVar b  = wantEtaExpansion e
-wantEtaExpansion (App e _)              = wantEtaExpansion e
-wantEtaExpansion (Var v)                = False 
-wantEtaExpansion (Lit {})               = False
-wantEtaExpansion _                      = True
+wantEtaExpansion df (Cast e _)             = wantEtaExpansion df e
+wantEtaExpansion df (Tick _ e)             = wantEtaExpansion df e
+wantEtaExpansion df (Lam b e) | isTyVar b  = wantEtaExpansion df e
+wantEtaExpansion df (App e _)              = wantEtaExpansion df e
+wantEtaExpansion _ (Var v)                 = False 
+wantEtaExpansion _ (Lit {})                = False
+wantEtaExpansion df (Let b e)              = exprArity e < arityTypeArity id_arity 
+    where  id_arity = findRhsArity df (getBindTopVar b) e (exprArity e) 
+wantEtaExpansion _ _                        = True
 
 
 -- ========= REPLACE HOLES =======
@@ -409,12 +413,12 @@ rewriteRecs is (b:bs) = case b of
                 in rewriteRecs is rest >>= \bs' -> return $ newBinds ++ bs'
             else do -- if top-level rec not used somewhere else, insert it in a toplevel non-rec
                 if isPiTy (varType v) then do 
-                    fresh <- newGhcVar (dropForAlls (varType v)) 
-                    let e' = subst fresh v e 
+                    fresh <- freshGhcVar $ dropForAlls (varType v) -- for alls should be dropped in the inner function, creates issues with 
+                    let e' = subst fresh v e         
                     rewriteRecs is bs >>= \bs' -> return $ NonRec v (liftTypConstraints (Let (Rec ((fresh,e'):ls)) (Var fresh))):bs 
                     --return $ NonRec v (Let (Rec ((fresh,e):ls)) (Var fresh)):bs' -- rewrite as a nonrec
                 else do 
-                    fresh <- newGhcVar (varType v)
+                    fresh <- freshGhcVar (varType v)
                     let e' = subst fresh v e 
                     rewriteRecs is bs >>= \bs' -> return $ NonRec v (Let (Rec ((fresh,e'):ls)) (Var fresh)):bs 
                  
@@ -433,14 +437,13 @@ liftTypConstraints (Let (Rec ((b,Lam v e):ls)) ine) | isTyConstrL v || isTyVar v
 liftTypConstraints e = e 
 
 
-newGhcVar :: Type -> StateT InScopeSet Ghc Id
-newGhcVar t = do
+freshGhcVar :: Type -> StateT InScopeSet Ghc Id
+freshGhcVar t = do
     is <- get
     let uq = unsafeGetFreshLocalUnique is
-    --let uq = getUnique id 
     let name = "fresh"
-        id'  = setIdNotExported $ mkExpLocal uq t name 
-        is' = extendInScopeSet is id' 
+        id'  = setIdNotExported $ makeVar' uq t name 
+        is'  = extendInScopeSet is id' 
     put is'
     return id'
 
