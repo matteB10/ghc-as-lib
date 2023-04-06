@@ -93,7 +93,7 @@ import Control.Monad (when)
 
 import Similar
 import Instance 
-import Transform (etaReduce, alpha, removeModInfo, repHoles, rewriteRecGhc, normalise, normalise', etaReduceTy, etaExpP)
+import Transform (etaReduce, alpha, removeModInfo, repHoles, rewriteRecGhc, normalise, normalise', etaReduceTy, etaExpP, rewriteBinds)
 import Utils
     ( banner, findLiterals, printHoleLoc, showGhc, ExerciseName ) 
 import GHC.Core.Opt.Monad (CoreToDo (..), getRuleBase, CoreM, SimplMode (sm_pre_inline))
@@ -378,12 +378,13 @@ compNormSt fp = runGhc (Just libdir) $ do
         coreprog = removeModInfo $ mg_binds coremod 
         fname = takeWhile (/= '/') fp  
     coreProg <- repHoles coreprog -- monadic "replace holes"
-    coreProg' <- rewriteRecGhc fname coreProg -- "inline" binders  
+    --coreProg' <- rewriteRecGhc fname coreProg -- "inline" binders  
+    coreProg' <- rewriteBinds fname coreProg 
     coreProg'' <- etaExpP coreProg'
     --liftIO $ putStrLn $ "rep holes:\n" ++ show coreProg 
     --liftIO $ putStrLn $ "rewrite rec:\n" ++ show coreProg'
     --liftIO $ putStrLn $ "eta exp:\n" ++ show coreProg''
-    let renamed = coreProg'' 
+    let renamed = etaReduce $ coreProg'
                 --alpha fname coreProg''
     return (renamed, env)   
 

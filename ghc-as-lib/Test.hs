@@ -5,6 +5,9 @@ module Test where
 
 
 import GHC.Core (CoreProgram)
+import GHC (HscEnv)
+import GHC.Utils.Outputable
+
 import Compile
 import Transform
 import Similar
@@ -17,6 +20,7 @@ import System.FilePath ((</>), takeDirectory)
 import Data.List (isSuffixOf, isPrefixOf)
 import Data.Char (isDigit)
 import Control.Lens (rewrite)
+
 
 
 data Mode = DEBUG -- print which pair of files compared, and the result 
@@ -123,6 +127,9 @@ failTests ename = matchSuffixedFiles ("./"++ename++"/bad/")
 
 normaliseTests :: ExerciseName -> IO [(FilePath, FilePath)]
 normaliseTests ename = matchSuffixedFiles ("./"++ename++"/norm/") 
+
+tcCore :: (CoreProgram, HscEnv) -> IO () 
+tcCore = uncurry typeCheckCore
 
 
 m = compCore False "other/good/Mod4.hs" 

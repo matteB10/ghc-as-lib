@@ -31,14 +31,14 @@ import GHC.Types.Var
       isLocalVar,
       setVarType, isTyVarBinder, setIdNotExported, mkExportedLocalVar, globaliseId )
 import GHC.Core.TyCo.Rep (Type(..), Kind, CoercionR, TyLit (StrTyLit), AnonArgFlag (VisArg))
-import GHC.Core.Type (eqType, isPiTy, dropForAlls)
+import GHC.Core.Type (eqType, isPiTy, dropForAlls, isForAllTy_co, isForAllTy_ty, splitForAllTyCoVarBinders)
 import GHC.Data.FastString (fsLit, mkFastString)
 import GHC.Types.Unique
 import GHC.Core.TyCon (TyCon, mkPrelTyConRepName)
 
 import GHC.Types.SrcLoc ( mkGeneralSrcSpan, srcLocSpan, GenLocated )
 import GHC.Types.Id.Info (IdDetails(VanillaId), vanillaIdInfo, pprIdDetails)
-import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy)
+import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc)
 import GHC.Base ((<|>), Multiplicity)
 import GHC.Data.Maybe (fromJust, liftMaybeT)
 import GHC.Utils.Outputable (Outputable(ppr))
@@ -82,6 +82,7 @@ import GHC.Driver.Monad (modifySession)
 import GHC.Core.Opt.Arity (etaExpandAT, exprArity, etaExpand, exprEtaExpandArity, arityTypeArity, findRhsArity)
 import GHC.Core.Opt.Simplify.Utils (tryEtaExpandRhs)
 import GHC.Types.Tickish (tickishCounts)
+import Instance
 
 
 normalise :: String -> CoreProgram -> CoreProgram
@@ -140,12 +141,12 @@ newVar id = do
 
 makeVar' :: Unique -> Type -> String -> Id
 makeVar' uq t n = mkLocalVar id_det name mult typ id_inf
-        where id_det = VanillaId 
+        where id_det = VanillaId
               name   = mkInternalName uq (mkOccName Occ.varName n) (mkGeneralSrcSpan (mkFastString ("Loc " ++ n)))
-              mult   = multiplicityTy 
-              typ    = t 
+              mult   = multiplicityTy
+              typ    = t
               id_inf = vanillaIdInfo
-            
+
 
 makeGlobVar :: Unique -> Type -> String -> Id
 makeGlobVar uq t n = mkGlobalVar id_det name t id_inf
@@ -173,24 +174,19 @@ etaExpP p = do
         inscopeVars = interactiveInScope ic
         is = mkInScopeSet $ mkUniqSet inscopeVars
     return $ goB dflags p
-    where goB :: DynFlags -> CoreProgram -> CoreProgram 
-          goB df = transformBi $ \bi -> case bi :: CoreBind of 
-                b@(NonRec v e) | wantEtaExpB df v e -> goE df (NonRec v (eta e df))
-                               | otherwise          -> goE df b 
-                b -> goE df b 
-          goE :: DynFlags -> CoreBind -> CoreBind 
-          goE df = transformBi $ \ex -> case ex :: CoreExpr of 
-            x@(Let b' e) | wantEtaExpansion df x -> eta x df  
+    where goB :: DynFlags -> CoreProgram -> CoreProgram
+          goB df = transformBi $ \bi -> case bi :: CoreBind of
+                b@(NonRec v e) | wantEtaExpB df v e -> NonRec v (eta e df)
+                               | otherwise          -> goE df b
+                b -> goE df b
+          goE :: DynFlags -> CoreBind -> CoreBind
+          goE df = transformBi $ \ex -> case ex :: CoreExpr of
             e        | wantEtaExpansion df e  -> eta e df
-                     | otherwise -> e 
-            
+                     | otherwise -> e
+
           eta expr df = let arit = exprEtaExpandArity df expr -- in new version inscopeset is passed, but not retrieved.
                         in etaExpandAT arit expr             -- how can we update the inscope set with
-          {- scope :: CoreProgram -> CoreProgram  -- test if it helps with global ids, 
-          scope = transformBi $ \ex -> case ex  :: Expr Var of 
-                (Var v) -> Var (globaliseId v)
-                e -> e  -}
-        
+
 
 
 -- Taken from GHC, not exported in 9.2.5
@@ -204,16 +200,16 @@ wantEtaExpansion df (Cast e _)             = wantEtaExpansion df e
 wantEtaExpansion df (Tick _ e)             = wantEtaExpansion df e
 wantEtaExpansion df (Lam b e) | isTyVar b  = wantEtaExpansion df e
 wantEtaExpansion df (App e _)              = wantEtaExpansion df e
-wantEtaExpansion _ (Var v)                 = False 
+wantEtaExpansion _ (Var v)                 = False
 wantEtaExpansion _ (Lit {})                = False
-wantEtaExpansion df ex@(Let b e)           = exprArity e < arityTypeArity id_arity 
-    where  id_arity = findRhsArity df (getBindTopVar b) ex (exprArity ex) 
+wantEtaExpansion df ex@(Let b e)           = exprArity ex < arityTypeArity id_arity
+    where  id_arity = findRhsArity df (getBindTopVar b) ex (exprArity ex)
 wantEtaExpansion _ _                        = True
 
-wantEtaExpB :: DynFlags -> Var -> CoreExpr -> Bool 
-wantEtaExpB df v e = ex_arity < arityTypeArity id_arity 
+wantEtaExpB :: DynFlags -> Var -> CoreExpr -> Bool
+wantEtaExpB df v e = ex_arity < arityTypeArity id_arity
     where id_arity = findRhsArity df v e ex_arity
-          ex_arity = exprArity e 
+          ex_arity = exprArity e
 
 
 -- ========= REPLACE HOLES =======
@@ -236,8 +232,8 @@ repHoles prog = do
                       tr = transformBiM $ \case
                         c@(Case e v t _) | isHoleExpr c ->
                                                let id = fromJust (getTypErr e)
-                                               in newHoleVar t >>= \id -> return $ Var id 
-                                         | otherwise -> return c 
+                                               in newHoleVar t >>= \id -> return $ Var id
+                                         | otherwise -> return c
                         e -> return e
 
 newHoleVar :: Type -> StateT InScopeSet Ghc Var
@@ -255,18 +251,18 @@ newHoleVar t = do
 
 --- old non-ghc version 
 repHoles_ :: CoreProgram -> CoreProgram
-repHoles_ prog = evalState (go prog) initSt 
+repHoles_ prog = evalState (go prog) initSt
         where go :: CoreProgram -> Ctx CoreProgram
               go = transformBiM $ \case
                         c@(Case e v t _) | isHoleExpr c ->
                                                            let id = fromJust (getTypErr e)
-                                                           in newHoleVar_ t >>= \id -> return $ Var id  
-                                         | otherwise -> return c 
+                                                           in newHoleVar_ t >>= \id -> return $ Var id
+                                         | otherwise -> return c
                         e -> return e
 
-newHoleVar_ :: Type -> Ctx Id 
-newHoleVar_ t = do 
-    uq <- gets freshUq 
+newHoleVar_ :: Type -> Ctx Id
+newHoleVar_ t = do
+    uq <- gets freshUq
     let name = "hole"
         id   = setIdExported $ setVarType (makeGlobVar (uncurry mkUnique uq) t name) t
     return id
@@ -387,13 +383,66 @@ etaReduceTy = rewriteBi etaRedTy
 
 etaRedTy :: Expr Var -> Maybe (Expr Var)
 -- | type 
-etaRedTy (App f (Var v)) | isTyConstrV v = return f
-                         | otherwise     = Nothing
+etaRedTy (App f (Type (TyVarTy v))) | isTyVar v = return f 
+                                    | otherwise     = Nothing
 etaRedTy _ = Nothing
 
 isTyConstrV v = take 2 (getOccString v) == "$f"
 isTyConstrL v = take 2 (getOccString v) == "$d"
 
+
+rewriteBinds :: String -> CoreProgram -> Ghc CoreProgram
+-- | Inline recursive binders as let-recs when appropriate
+rewriteBinds fn prog = do
+  env <- getSession
+  let ic = hsc_IC env
+  let inscopeVars = interactiveInScope ic
+      is = mkInScopeSet $ mkUniqSet inscopeVars
+  (prog',is') <- runStateT (recToNonRec is prog) is
+  (prog'',is'') <- runStateT (inlineRec is' prog') is' 
+  let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars is'')
+  let env' = env {hsc_IC = ic'}
+  setSession env'
+  return prog''
+
+
+recToNonRec :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
+-- | Rewrite top-level Recursive binders as Let-Recs in a NonRec binder
+recToNonRec is [] = return []
+recToNonRec is (b:bs) = case b of
+    rr@(Rec ((v,e):ls)) -> do
+                if isForAllTy_ty (varType v) then do
+                    let (_,ft) = splitForAllTyCoVarBinders (varType v) -- remove forall from (soon) inlined function
+                    fresh <- freshGhcVar ft -- constraints should also be dropped => requires change in expression  
+                    let e' = subst fresh v e
+                        is' = extendInScopeSet is fresh
+                    put is'
+                    --liftIO $ putStrLn $ "Rec " ++ show v ++ " typ: " ++ showSDocUnsafe (ppr ft)
+                    recToNonRec is bs >>= \bs' -> return $ NonRec v (liftTypConstraints (Let (Rec ((fresh,e'):ls)) (Var fresh))):bs
+                    --return $ NonRec v (Let (Rec ((fresh,e):ls)) (Var fresh)):bs' -- rewrite as a nonrec
+                else do
+                    fresh <- freshGhcVar (varType v)
+                    let e' = subst fresh v e
+                        is' = extendInScopeSet is fresh
+                    put is'
+                    recToNonRec is bs >>= \bs' -> return $ NonRec v (Let (Rec ((fresh,e'):ls)) (Var fresh)):bs
+
+    nr@(NonRec v e) ->
+                recToNonRec is bs >>= \bs' -> return $ nr : bs'
+
+inlineRec :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
+inlineRec is [] = return []
+inlineRec is (b:bs) = case b of
+    rr@(Rec ((v,e):ls)) -> liftIO $ putStrLn "should not have any top level recs left" >> return []
+    nr@(NonRec v e) -> do
+         liftIO $ putStrLn $ "Binder: " ++ show v 
+         if any (insB v) bs then do 
+                                liftIO $ putStrLn "inside"
+                                let (newBinds, rest) = inline nr bs in inlineRec is rest >>= \bs' -> return $ newBinds ++ bs'
+                            else inlineRec is bs >>= \bs' -> return $ nr:bs'
+   {-  nr@(NonRec v e) | any (insB v) bs -> let (newBinds, rest) = inline nr bs
+                                         in inlineRec is rest >>= \bs' -> return $ newBinds ++ bs'
+                    | otherwise -> inlineRec is bs >>= \bs' -> return $ nr:bs' -}
 
 rewriteRecGhc :: String -> CoreProgram -> Ghc CoreProgram
 -- | Inline recursive binders as let-recs when appropriate
@@ -408,7 +457,6 @@ rewriteRecGhc fn prog = do
   setSession env'
   return prog'
 
-
 rewriteRecs :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
 -- | Rewrite top-level Recursive binders as Let-Recs in a NonRec binder (if not used somewhere in the program)
 --   Inline Recs as Let-Recs into NonRecs 
@@ -422,29 +470,40 @@ rewriteRecs is (b:bs) = case b of
                 let (newBinds, rest) = inline rr bs
                 in rewriteRecs is rest >>= \bs' -> return $ newBinds ++ bs'
             else do -- if top-level rec not used somewhere else, insert it in a toplevel non-rec
-                if isPiTy (varType v) then do 
-                    fresh <- freshGhcVar $ dropForAlls (varType v) -- for alls should be dropped in the inner function, creates issues with 
-                    let e' = subst fresh v e         
-                    rewriteRecs is bs >>= \bs' -> return $ NonRec v (liftTypConstraints (Let (Rec ((fresh,e'):ls)) (Var fresh))):bs 
+                if isForAllTy_ty (varType v) then do
+                    let (_,ft) = splitForAllTyCoVarBinders (varType v) -- remove forall from (soon) inlined function
+                    fresh <- freshGhcVar ft -- constraints should also be dropped => requires change in expression  
+                    let e' = subst fresh v e
+                        is' = extendInScopeSet is fresh
+                    put is'
+                    liftIO $ putStrLn $ "Rec " ++ show v ++ " typ: " ++ showSDocUnsafe (ppr ft)
+                    rewriteRecs is bs >>= \bs' -> return $ NonRec v (liftTypConstraints (Let (Rec ((fresh,e'):ls)) (Var fresh))):bs
                     --return $ NonRec v (Let (Rec ((fresh,e):ls)) (Var fresh)):bs' -- rewrite as a nonrec
-                else do 
+                else do
                     fresh <- freshGhcVar (varType v)
-                    let e' = subst fresh v e 
-                    rewriteRecs is bs >>= \bs' -> return $ NonRec v (Let (Rec ((fresh,e'):ls)) (Var fresh)):bs 
-                 
+                    let e' = subst fresh v e
+                        is' = extendInScopeSet is fresh
+                    put is'
+                    rewriteRecs is bs >>= \bs' -> return $ NonRec v (Let (Rec ((fresh,e'):ls)) (Var fresh)):bs
+
     nr@(NonRec v e) -> do
         if --trace ("BN" ++ show bn ++ "V" ++ show v) 
             any (insB v) bs  --  if used somewhere else in program, inline it there
-                             
+
             then
                 let (newBinds, rest) = inline nr bs
                 in rewriteRecs is rest >>= \bs' -> return $ newBinds ++ bs'
             else
                 rewriteRecs is bs >>= \bs' -> return $ nr:bs'
 
+dropConstr :: Type -> Type
+-- | Drop outer type constraints when inlining. Not sure if this generally holds 
+dropConstr f@(FunTy {}) = ft_res (ft_res f)
+dropConstr t = t
+
 liftTypConstraints :: Expr Var -> Expr Var
 liftTypConstraints (Let (Rec ((b,Lam v e):ls)) ine) | isTyConstrL v || isTyVar v = Lam v $ liftTypConstraints (Let (Rec ((b,e):ls)) ine)
-liftTypConstraints e = e 
+liftTypConstraints e = e
 
 
 freshGhcVar :: Type -> StateT InScopeSet Ghc Id
@@ -452,15 +511,15 @@ freshGhcVar t = do
     is <- get
     let uq = unsafeGetFreshLocalUnique is
     let name = "fresh"
-        id'  = setIdNotExported $ makeVar' uq t name 
-        is'  = extendInScopeSet is id' 
+        id'  = setIdNotExported $ makeVar' uq t name
+        is'  = extendInScopeSet is id'
     put is'
     return id'
 
 -- Non-ghc version
 
-rewriteRec_ :: String -> CoreProgram -> CoreProgram 
-rewriteRec_ fname cs = evalState cs' (initSt {exerName = fname})  
+rewriteRec_ :: String -> CoreProgram -> CoreProgram
+rewriteRec_ fname cs = evalState cs' (initSt {exerName = fname})
     where cs' = rewriteRecs_ cs
 
 rewriteRecs_ :: CoreProgram -> Ctx CoreProgram
@@ -472,28 +531,28 @@ rewriteRecs_ (b:bs) = case b of
         if --trace ("BN" ++ show bn ++ "V" ++ show v) 
             any (insB v) bs  --  if used somewhere else in program, inline it there
                                  --  might be bad for performanc
-            then 
-                let (newBinds, rest) = inline rr bs 
+            then
+                let (newBinds, rest) = inline rr bs
                 in rewriteRecs_ rest >>= \bs' -> return $ newBinds ++ bs'
-            else if isPiTy (varType v) then do 
+            else if isPiTy (varType v) then do
                     fresh <- freshVar (varType v) -- dropForAlls ? 
                     e' <- subst_ fresh v e
-                    trace ("replacing " ++ show v ++ " e: " ++ show e') 
+                    trace ("replacing " ++ show v ++ " e: " ++ show e')
                         rewriteRecs_ bs >>= \bs' -> return $ NonRec v (liftTypConstraints (Let (Rec ((fresh, e'):ls)) (Var fresh))):bs
-                 else do 
+                 else do
                     fresh <- freshVar (varType v)
                     e' <- subst_ fresh v e
-                    rewriteRecs_ bs >>= \bs' -> return $ NonRec v (Let (Rec ((fresh,e'):ls)) (Var fresh)):bs 
+                    rewriteRecs_ bs >>= \bs' -> return $ NonRec v (Let (Rec ((fresh,e'):ls)) (Var fresh)):bs
 
     nr@(NonRec v e) -> do
         if --trace ("BN" ++ show bn ++ "V" ++ show v) 
             any (insB v) bs  --  if used somewhere else in program, inline it there
                              --  might be bad for performance
             then
-                let (newBinds, rest) = inline nr bs 
+                let (newBinds, rest) = inline nr bs
                 in rewriteRecs_ rest >>= \bs' -> return $ newBinds ++ bs'
             else
-                rewriteRecs_ bs >>= \bs' -> return $ nr:bs' 
+                rewriteRecs_ bs >>= \bs' -> return $ nr:bs'
 
 subst :: Var -> Var -> CoreExpr -> CoreExpr
 subst v v' = --trace ("found subst" ++ show "["++ show v' ++ "->" ++ show v ++"]" ) $
@@ -516,7 +575,7 @@ insB n b = or [v==n | v <- universeBi b :: [Var]]
 
 inline :: Bind Var -> [Bind Var] -> ([Bind Var],[Bind Var])
 -- | Inline a binder and return remaining binders 
-inline b bs = let ls  = getBind bs (getBindTopVar b)
+inline b bs = let ls  = getBind bs (getBindTopVar b) -- get all binders using the binder we want to inline 
                   b'  = setBindTopVar (makeLocal (getBindTopVar b)) b -- change scope to local of binder variable if inlined 
                   bs' = insertBind b ls
                   in (bs', delete b (bs \\ ls))
@@ -535,7 +594,7 @@ setBindTopVar v = transformBi $ \e -> case e :: CoreExpr of
 getBindTopVar :: Bind Var -> Var
 -- | Get variable of a binder 
 getBindTopVar (NonRec v _) = v
-getBindTopVar (Rec ((v,e):es)) = v
+getBindTopVar (Rec ((v,e):_)) = v
 
 
 getBind :: [CoreBind] -> Var -> [Bind Var]
@@ -553,16 +612,17 @@ bindNames = \case
 
 
 insertBind :: Bind Var -> [Bind Var] -> [Bind Var]
-insertBind r@(Rec es) bs = map insertB bs  -- dont handle when es not empty
-    where insertB (NonRec b (Lam x e)) = NonRec b (Lam x (Let r e))
-          insertB (NonRec b e) = NonRec b (Let r e)
-          insertB (Rec _)      = error "not sure about inlining recs into recs"
+-- | Inline binder in all binders using it 
 insertBind n@(NonRec v e) bs = map insertB bs -- inline another nonrec 
-    where insertB = transformBi $ \case
+    where insertB bi@(NonRec b e') = (transformBi $ \case
             (Var v') | v == v' -> e
-            e -> e
+            e -> e) bi
+insertBind (Rec _) _ = error "All top-level binders should be NonRecs"
 
-
+{-
+App f x 
+-- let f = def of x in App f x 
+-}
 
 --- EXPERIMENTAL STUFF BELOW
 ----------------------------------------------------
