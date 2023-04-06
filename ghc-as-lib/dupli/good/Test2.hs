@@ -3,6 +3,8 @@ module Test2 where
 
 
 dupli :: [a] -> [a]
-dupli = _ (replicate 2) 
+dupli xs = hole doub xs 
+    where doub = replicate 2 
+          hole = _ 
 
 

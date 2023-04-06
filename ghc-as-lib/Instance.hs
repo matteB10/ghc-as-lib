@@ -118,12 +118,12 @@ instance Show TyCon where
 
 
 instance Show CoercionR where
-  show t = "CoercionR "
+  show = showSDocUnsafe . ppr  
 
 deriving instance Show Type
 
 instance Show AnonArgFlag where
-  show aaf = "AnonArgFlag"
+  show = showSDocUnsafe . ppr 
 
 deriving instance (Show a, Show b) => Show (VarBndr a b)
 deriving instance Show ArgFlag
@@ -143,7 +143,7 @@ p :: [Char] -> [Char]
 p x = "(" ++ x ++ ")"
 
 instance Show CoreTickish where
-  show c = "coretickish "
+  show = showSDocUnsafe . ppr  
 
 instance Show FunctionOrData where
   show IsFunction = "(function)"
@@ -172,10 +172,10 @@ instance Show Warnings where
 deriving instance Show TyThing
 
 instance Show (CoAxiom a) where
-  show x = ""
+  show = showSDocUnsafe . ppr  
 
 instance Show ConLike where
-  show c = ""
+  show = showSDocUnsafe . ppr 
 
 instance Show DynFlags where
   show (DynFlags {generalFlags = g}) = show g

@@ -20,6 +20,7 @@ import System.FilePath ((</>), takeDirectory)
 import Data.List (isSuffixOf, isPrefixOf)
 import Data.Char (isDigit)
 import Control.Lens (rewrite)
+import Test.QuickCheck (ASCIIString(getASCIIString))
 
 
 
@@ -41,6 +42,12 @@ test m n = do
               >> tf n f 
   normaliseTests n >>= \f -> banner "Expected match with normalisation: "
               >> tf n f 
+
+testTc :: ExerciseName -> IO () 
+testTc fn = do 
+    files <- getAllFiles fn 
+    compiled <- mapM compNormSt files 
+    mapM_ tcCore compiled 
 
 testPr :: ExerciseName -> [(FilePath,FilePath)] -> IO () 
 -- | Test and print test by test 
@@ -64,6 +71,8 @@ testPrA n ps = do
   putStr "programs match" >> mapM compare_simpl ps >>= print 
   putStrLn  "Manual transformations:"
   putStr "programs match" >> mapM compare_norm ps >>= print 
+  putStrLn "Float transformations"
+  putStr "programs match" >> mapM compare_float ps >>= print 
 
 
 comparePrint :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO ()
@@ -95,10 +104,11 @@ compare_ comp_pass fp1 fp2 = do
   return (cp1 ~== cp2)
 
 
-compare_desugar, compare_simpl, compare_norm :: (FilePath,FilePath) -> IO Bool 
+compare_desugar, compare_simpl, compare_norm, compare_float :: (FilePath,FilePath) -> IO Bool 
 compare_desugar = uncurry $ compare_ (compCore False) 
 compare_simpl = uncurry $ compare_ compSetSimplPass 
 compare_norm = uncurry $ compare_ compN
+compare_float = uncurry $ compare_ compF
 
 matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
 matchSuffixedFiles folderPath = do
@@ -118,6 +128,15 @@ extractSuffix filePath =
       revSuffWNum = takeWhile isDigit (drop (length reversedSuffix) reversedFile)
   in reverse (reversedSuffix ++ revSuffWNum) 
 
+getAllFiles :: ExerciseName -> IO [FilePath]
+getAllFiles n = do 
+  good <- listDirectory (n ++ "/good")
+  norm <- listDirectory (n ++ "/norm")
+  bad <- listDirectory (n ++ "/bad")
+  let good' = map (\f -> "./"++n++"/good/"++f) good 
+      bad'  = map (\f -> "./"++n++"/bad/"++f) bad 
+      norm' = map (\f -> "./"++n++"/norm/"++f) norm 
+  return $ good' ++ bad' ++ norm' 
 
 succTests :: ExerciseName -> IO [(FilePath, FilePath)]
 succTests ename = matchSuffixedFiles ("./"++ename++"/good/") 

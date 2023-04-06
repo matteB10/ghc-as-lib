@@ -21,6 +21,8 @@ import GHC.Utils.Outputable (showSDocUnsafe, Outputable (ppr))
 import GHC.Types.Literal (Literal(..), LitNumType)
 
 import Utils ( isHole', isHoleExpr, sp) 
+import GHC.Cmm (isAssociativeMachOp)
+import GHC.Core.Coercion (eqCoercion)
 
 class Similar a where
     (~==) :: a -> a -> Bool
@@ -32,22 +34,23 @@ instance Similar CoreProgram where
 
 --- Without trace -------------------------------------
 instance Similar (Bind Var) where
-    (Rec es) ~== (Rec es')          = and $ concatMap (\(x,x') -> map (\(y,y') -> x ~== y && x' ~== y') es) es'
+    (Rec es) ~== (Rec es') = all (\((b,e),(b',e')) -> b ~== b' && e ~== e') (zip es es')
+                                    --and $ concatMap (\(x,x') -> map (\(y,y') -> x ~== y && x' ~== y') es) es'
     (NonRec v e) ~== (NonRec v' e') = v ~== v' && e ~== e'
-    x ~== y                         = False --case x of -- TODO: How should I treat recs/nonrecs? can occur because of holes 
-                        --(Rec ((v,e):vs)) -> let NonRec v' e' = y   in v ~== v' && e ~== e'
-                        --(NonRec v' (Let (Rec ((b,_):s)) e')) -> let Rec ((v,e):vs) = y in v ~== v' && (Let (Rec ((b,e):vs)) (Var b)) ~== e'
+    x ~== y                         = False 
 
 
 instance Similar (Expr Var) where
-    (Var id) ~== (Var id')                  = --trace "ID" 
+    (Var id) ~== (Var id')                  = --trace ("ID : id1: " ++ show id ++ "id2: " ++ show id' )
                                               id ~== id'
-    (Type t) ~== (Type t')                  = --trace "TYPE" 
+    (Type t) ~== (Type t')                  = --trace ("TYPES : t1: " ++ show t ++ " t2: " ++ show t' ) 
                                               t ~== t'
     (Lit l)  ~== (Lit l')                   = --trace ("LIT" `sp` show l `sp` show l')
                                               l ~== l' -- No point in checking equality of literals, they will not be equal
     (App e arg) ~== (App e' arg')           = --trace "APP" 
                                               e ~== e' && arg ~== arg'
+
+                                             
     (Lam b e) ~== (Lam b' e')               = --trace "LAM" 
                                               b ~== b' && e ~== e' -- check that the type of the head is equal                                      
     (Case e v t as) ~== (Case e' v' t' as') = --trace "CASE" 
@@ -56,20 +59,33 @@ instance Similar (Expr Var) where
                                               co ~== co' && e ~== e'
     (Let b e)   ~== (Let b' e')             = --trace "LET" 
                                               b ~== b' && e ~== e'
-    x ~== y                                 | isHoleExpr x || isHoleExpr y = --trace ("isHole: type1:" ++ (showSDocUnsafe $ ppr (typeE x)) `nl` "type2:" `sp` (showSDocUnsafe $ ppr (typeE y))) 
-                                                                            True -- before alpharenaming/case expr holes not replaced 
-                                            | isHole' x || isHole' y = --trace ("isHole:" ++ "x: " ++ show x ++ "y: " ++ show y) 
+    (Coercion c) ~== (Coercion c')          = --trace "COERCION"
+                                              c ~== c' 
+    x ~== y                                 | isHole' x || isHole' y = --trace ("isHole:" ++ "x: " ++ show x ++ "y: " ++ show y) 
                                                                        True -- if hole replaced with hole variable
                                             | otherwise = --trace ("OTHER: X:" `sp` show x `sp` " Y: " `sp` show y)
                                                           False
 
+{- we need checks for e.g  xs == reverse xs ~== reverse xs == xs 
+however, pattern matching like below does not scale well at all. 
+Need a clever approach. 
+(App f@(App op e1) e2) ~== (App f'@(App op' e1') e2') 
+                                                | isCommutative op =  trace ("op1" ++ show op ++ " op2:" ++ show op') $ 
+                                                                op ~== op' && e1 ~== e1' || e2 ~== e2' || e1 ~== e2' && e2 ~== e1' 
+                                                | otherwise = f ~== f' && e2 ~== e2' 
+isCommutative :: CoreExpr -> Bool 
+-- | Check if we are applying something commutative, then the order of the arguments are irrelevant
+-- not sure how to check this, functions are just variables
+isCommutative (Var op) = getOccString op `elem` ["==", "+", "*"] -- just for now
+isCommutative _ = False  -}
+
 instance Similar CoercionR where
-    c ~== c' = True -- how should this be checked?
+    _ ~== _ = True --eqCoercion might need causion for uniques of type variables 
 
 instance Similar Literal where 
   (LitString l) ~== (LitString l')      = l == l' 
   (LitChar c) ~== (LitChar c')          = c == c'  
-  (LitNumber ti i) ~== (LitNumber tj j) = ti == tj && i == j 
+  (LitNumber ti i) ~== (LitNumber tj j) = ti == tj && i == j -- disregarding litnumtype for now 
   (LitFloat r) ~== (LitFloat p)         = r == p  
   (LitDouble r) ~== (LitDouble p)       = r == p 
   l ~== k                               = True 
@@ -82,7 +98,8 @@ instance Similar (Alt Var) where
         ac ~== ac' && vs ~== vs' && e ~== e'
 
 instance Similar [Var] where 
-    xs ~== ys = all (uncurry (~==)) (zip xs ys)
+    xs ~== ys = --trace "[VAR]"
+                all (uncurry (~==)) (zip xs ys)
 
 instance Similar AltCon where
     (DataAlt a) ~== (DataAlt a') = a ~== a'  
@@ -98,14 +115,15 @@ instance Similar Var where
         getOccString v1 == getOccString v2 
 
 instance Similar Type where
-    k1 ~== k2 = --trace ("TYPEEQ: " ++ "T1" `nl` (showSDocUnsafe $ ppr k1) `nl` "T2" `nl` (showSDocUnsafe $ ppr k2)) 
-                    show k1 == show k2  -- to disregard uniques of typevars from different programs (after renaming we might be able to use eqType)
-        --trace ("type1:" ++ show k1 `nl` "type2:" ++ show k2) show k1 == show k2 ----ugly hack with show, eqType seems to give error in some cases where type is similar 
+    k1 ~== k2 = --trace ("TYPEEQ: " ++ "T1" `sp` (showSDocUnsafe $ ppr k1) `sp` "T2" `sp` (showSDocUnsafe $ ppr k2)) 
+               show k1 == show k2  -- to disregard uniques of typevars from different programs (after renaming we might be able to use eqType)
+               -- using eqType would require same uniques, which we don't have across different compilations
+               -- would require "renaming" all uniques from a large storage of fixed uniques 
 
 -- ==================
 
 instance Eq (Bind Var) where 
-    (Rec es) == (Rec xs) = and $ concatMap (\(x,x') -> map (\(y,y') -> x `eqVar` y && x' == y') es) xs 
+    (Rec es) == (Rec xs) = all (\((b,e),(b',e')) -> b ~== b' && e ~== e') (zip es xs)
     (NonRec v b) == (NonRec i c) = v `eqVar` i && b == c 
     x == y = False 
 
@@ -139,7 +157,7 @@ instance Eq CoercionR where
     c == c' = True 
  
 instance Eq (Alt Var) where
-    (Alt ac vs e) == (Alt ac' vs' e') = trace "ALTVAR" ac == ac' && vs == vs' && e == e'
+    (Alt ac vs e) == (Alt ac' vs' e') = ac == ac' && vs == vs' && e == e' --- SEEMS LIKE THIS GETS CALLED BY SOMEONE
 
 
 

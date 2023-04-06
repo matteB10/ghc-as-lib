@@ -3,5 +3,5 @@ module Mod8 where
 
 
 dupli :: [a] -> [a]
-dupli xs = concatMap (replicate 2) xs 
+dupli = _ (replicate 2) 
 

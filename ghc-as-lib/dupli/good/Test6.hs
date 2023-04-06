@@ -2,5 +2,4 @@
 module Test6 where 
 
 dupli :: [a] -> [a]
-dupli [] = []
-dupli xs = concatMap (\x -> [x,x]) xs 
+dupli xs = concatMap _ xs 

@@ -31,14 +31,14 @@ import GHC.Types.Var
       isLocalVar,
       setVarType, isTyVarBinder, setIdNotExported, mkExportedLocalVar, globaliseId )
 import GHC.Core.TyCo.Rep (Type(..), Kind, CoercionR, TyLit (StrTyLit), AnonArgFlag (VisArg))
-import GHC.Core.Type (eqType, isPiTy, dropForAlls, isForAllTy_co, isForAllTy_ty, splitForAllTyCoVarBinders)
+import GHC.Core.Type (eqType, isPiTy, dropForAlls, isForAllTy_co, isForAllTy_ty, splitForAllTyCoVarBinders, splitForAllInvisTVBinders)
 import GHC.Data.FastString (fsLit, mkFastString)
 import GHC.Types.Unique
 import GHC.Core.TyCon (TyCon, mkPrelTyConRepName)
 
 import GHC.Types.SrcLoc ( mkGeneralSrcSpan, srcLocSpan, GenLocated )
 import GHC.Types.Id.Info (IdDetails(VanillaId), vanillaIdInfo, pprIdDetails)
-import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc)
+import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc, floatBindings, FloatOutSwitches (..))
 import GHC.Base ((<|>), Multiplicity)
 import GHC.Data.Maybe (fromJust, liftMaybeT)
 import GHC.Utils.Outputable (Outputable(ppr))
@@ -83,6 +83,10 @@ import GHC.Core.Opt.Arity (etaExpandAT, exprArity, etaExpand, exprEtaExpandArity
 import GHC.Core.Opt.Simplify.Utils (tryEtaExpandRhs)
 import GHC.Types.Tickish (tickishCounts)
 import Instance
+import GHC.Core.Predicate (isEvVar)
+import GHC.Core.Opt.FloatOut
+import GHC.Utils.Logger (initLogger)
+import GHC.Types.Unique.Supply (mkSplitUniqSupply)
 
 
 normalise :: String -> CoreProgram -> CoreProgram
@@ -387,8 +391,6 @@ etaRedTy (App f (Type (TyVarTy v))) | isTyVar v = return f
                                     | otherwise     = Nothing
 etaRedTy _ = Nothing
 
-isTyConstrV v = take 2 (getOccString v) == "$f"
-isTyConstrL v = take 2 (getOccString v) == "$d"
 
 
 rewriteBinds :: String -> CoreProgram -> Ghc CoreProgram
@@ -410,9 +412,9 @@ recToNonRec :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
 -- | Rewrite top-level Recursive binders as Let-Recs in a NonRec binder
 recToNonRec is [] = return []
 recToNonRec is (b:bs) = case b of
-    rr@(Rec ((v,e):ls)) -> do
-                if isForAllTy_ty (varType v) then do
-                    let (_,ft) = splitForAllTyCoVarBinders (varType v) -- remove forall from (soon) inlined function
+    rr@(Rec ((v,e):ls)) -> do -- RECS WITH MORE ITEMS NOT HANDLED 
+                if isForAllTy_ty (varType v) then do -- this is tr
+                    let (_,ft) = splitForAllInvisTVBinders (varType v) -- remove forall type (if not explicitly typed) from (soon) inlined function
                     fresh <- freshGhcVar ft -- constraints should also be dropped => requires change in expression  
                     let e' = subst fresh v e
                         is' = extendInScopeSet is fresh
@@ -426,18 +428,15 @@ recToNonRec is (b:bs) = case b of
                         is' = extendInScopeSet is fresh
                     put is'
                     recToNonRec is bs >>= \bs' -> return $ NonRec v (Let (Rec ((fresh,e'):ls)) (Var fresh)):bs
-
-    nr@(NonRec v e) ->
-                recToNonRec is bs >>= \bs' -> return $ nr : bs'
+    nr@(NonRec v e) -> recToNonRec is bs >>= \bs' -> return $ nr : bs'
 
 inlineRec :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
 inlineRec is [] = return []
 inlineRec is (b:bs) = case b of
-    rr@(Rec ((v,e):ls)) -> liftIO $ putStrLn "should not have any top level recs left" >> return []
+    rr@(Rec ((v,e):ls)) -> (liftIO $ putStrLn "should not have any top level recs left") >> 
+                                                    inlineRec is bs >>= \bs' -> return $ rr:bs' 
     nr@(NonRec v e) -> do
-         liftIO $ putStrLn $ "Binder: " ++ show v 
          if any (insB v) bs then do 
-                                liftIO $ putStrLn "inside"
                                 let (newBinds, rest) = inline nr bs in inlineRec is rest >>= \bs' -> return $ newBinds ++ bs'
                             else inlineRec is bs >>= \bs' -> return $ nr:bs'
    {-  nr@(NonRec v e) | any (insB v) bs -> let (newBinds, rest) = inline nr bs
@@ -501,8 +500,11 @@ dropConstr :: Type -> Type
 dropConstr f@(FunTy {}) = ft_res (ft_res f)
 dropConstr t = t
 
+--isEvVar (Var ($dEq)) == True 
+--isEvVar (Var $fEq[]) == True
+
 liftTypConstraints :: Expr Var -> Expr Var
-liftTypConstraints (Let (Rec ((b,Lam v e):ls)) ine) | isTyConstrL v || isTyVar v = Lam v $ liftTypConstraints (Let (Rec ((b,e):ls)) ine)
+liftTypConstraints (Let (Rec ((b,Lam v e):ls)) ine) | isEvVar v || isTyVar v = Lam v $ liftTypConstraints (Let (Rec ((b,e):ls)) ine)
 liftTypConstraints e = e
 
 
@@ -517,6 +519,30 @@ freshGhcVar t = do
     return id'
 
 -- Non-ghc version
+
+recToNonRecs_ :: String -> CoreProgram -> CoreProgram
+recToNonRecs_ fname cs = evalState cs' (initSt {exerName = fname})
+    where cs' = recToNonRec_ cs
+
+recToNonRec_ :: CoreProgram -> Ctx CoreProgram
+-- | Rewrite top-level Recursive binders as Let-Recs in a NonRec binder
+recToNonRec_ [] = return []
+recToNonRec_ (b:bs) = case b of
+    rr@(Rec ((v,e):ls)) -> do  
+                if isForAllTy_ty (varType v) then do -- this is tr
+                    let (_,ft) = splitForAllInvisTVBinders (varType v) -- remove forall type (if not explicitly typed) from (soon) inlined function
+                    fresh <- freshVar ft -- constraints should also be dropped => requires change in expression  
+                    let e' = subst fresh v e
+                    --liftIO $ putStrLn $ "Rec " ++ show v ++ " typ: " ++ showSDocUnsafe (ppr ft)
+                    recToNonRec_ bs >>= \bs' -> return $ NonRec v (liftTypConstraints (Let (Rec ((fresh,e'):ls)) (Var fresh))):bs
+                    --return $ NonRec v (Let (Rec ((fresh,e):ls)) (Var fresh)):bs' -- rewrite as a nonrec
+                else do
+                    fresh <- freshVar (varType v)
+                    let e' = subst fresh v e
+                    recToNonRec_ bs >>= \bs' -> return $ NonRec v (Let (Rec ((fresh,e'):ls)) (Var fresh)):bs
+    nr@(NonRec v e) ->
+                recToNonRec_ bs >>= \bs' -> return $ nr : bs'
+    _ -> trace ("do we get here") return []
 
 rewriteRec_ :: String -> CoreProgram -> CoreProgram
 rewriteRec_ fname cs = evalState cs' (initSt {exerName = fname})
@@ -619,10 +645,22 @@ insertBind n@(NonRec v e) bs = map insertB bs -- inline another nonrec
             e -> e) bi
 insertBind (Rec _) _ = error "All top-level binders should be NonRecs"
 
-{-
-App f x 
--- let f = def of x in App f x 
--}
+
+floatOut :: CoreProgram -> Ghc CoreProgram 
+floatOut p = do 
+    df <- getSessionDynFlags
+    logger <- liftIO initLogger 
+    let floatSw = FloatOutSwitches {
+            floatOutLambdas = Nothing,    -- float all lambdas to top level,
+            floatOutConstants = False,    -- True => float constants to top level,
+            floatOutOverSatApps = False,  -- True => float out over-saturated application
+            floatToTopLevelOnly = False   -- Allow floating to the top level only.
+            } 
+    us <- liftIO $ mkSplitUniqSupply 'z'
+    liftIO $ floatOutwards logger floatSw df us p 
+
+
+
 
 --- EXPERIMENTAL STUFF BELOW
 ----------------------------------------------------
@@ -661,6 +699,9 @@ sub_ v v' = \case
         modify $ \s -> s {env = Map.insert v v' (env s)}
         return (Var v)
     e -> return e
+
+
+
 
 
 

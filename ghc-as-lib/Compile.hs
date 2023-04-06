@@ -93,7 +93,7 @@ import Control.Monad (when)
 
 import Similar
 import Instance 
-import Transform (etaReduce, alpha, removeModInfo, repHoles, rewriteRecGhc, normalise, normalise', etaReduceTy, etaExpP, rewriteBinds)
+import Transform (etaReduce, alpha, removeModInfo, repHoles, rewriteRecGhc, normalise, normalise', etaReduceTy, etaExpP, rewriteBinds, floatOut)
 import Utils
     ( banner, findLiterals, printHoleLoc, showGhc, ExerciseName ) 
 import GHC.Core.Opt.Monad (CoreToDo (..), getRuleBase, CoreM, SimplMode (sm_pre_inline))
@@ -355,6 +355,38 @@ compSetSimplPass fp = runGhc (Just libdir) $ do
     --liftIO $ print simplProg
     return simplProg   
 
+compFloat :: FilePath -> IO (CoreProgram, HscEnv) 
+-- | Try to use transformations with state, 
+-- return env to core lint it later 
+compFloat fp = runGhc (Just libdir) $ do
+    dflags <- setFlags False (holeFlags ++ genFlags ++ simplFlags) 
+    let dflagsd = dflags 
+    setSessionDynFlags (dopt_set dflagsd Opt_D_dump_simpl_stats) 
+    setSessionDynFlags (gopt_set dflagsd Opt_DoCoreLinting) 
+    dflags' <- getSessionDynFlags
+    target <- guessTarget fp Nothing
+    setTargets [target]
+    load LoadAllTargets
+    modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
+    env <- getSession 
+    pmod <- parseModule modSum 
+    tmod <- typecheckModule pmod 
+    dmod <- desugarModule tmod 
+    names <- getNamesInScope 
+    let coremod = dm_core_module dmod 
+        coreprog = removeModInfo $ mg_binds coremod 
+        fname = takeWhile (/= '/') fp  
+    coreProg <- floatOut coreprog
+    coreProg' <- etaExpP coreProg
+    coreProg'' <- repHoles coreProg' -- monadic "replace holes"  
+    --liftIO $ putStrLn $ "rep holes:\n" ++ show coreProg 
+    --liftIO $ putStrLn $ "rewrite rec:\n" ++ show coreProg'
+    --liftIO $ putStrLn $ "eta exp:\n" ++ show coreProg''
+    
+    let renamed = alpha fname $ etaReduce coreProg''
+    return (renamed, env)   
+
+
 
 compNormSt :: FilePath -> IO (CoreProgram, HscEnv) 
 -- | Try to use transformations with state, 
@@ -375,22 +407,27 @@ compNormSt fp = runGhc (Just libdir) $ do
     dmod <- desugarModule tmod 
     names <- getNamesInScope 
     let coremod = dm_core_module dmod 
-        coreprog = removeModInfo $ mg_binds coremod 
+        coreProg = removeModInfo $ mg_binds coremod 
         fname = takeWhile (/= '/') fp  
-    coreProg <- repHoles coreprog -- monadic "replace holes"
-    --coreProg' <- rewriteRecGhc fname coreProg -- "inline" binders  
-    coreProg' <- rewriteBinds fname coreProg 
-    coreProg'' <- etaExpP coreProg'
+    coreProg' <- repHoles coreProg -- monadic "replace holes"
+    coreProg'' <- rewriteBinds fname coreProg' -- "inline" binders 
+    coreProg''' <- etaExpP coreProg''
     --liftIO $ putStrLn $ "rep holes:\n" ++ show coreProg 
     --liftIO $ putStrLn $ "rewrite rec:\n" ++ show coreProg'
     --liftIO $ putStrLn $ "eta exp:\n" ++ show coreProg''
-    let renamed = etaReduce $ coreProg'
-                --alpha fname coreProg''
+    
+    let renamed = alpha fname $ etaReduce coreProg'''
+                
     return (renamed, env)   
 
 compN :: FilePath -> IO CoreProgram 
 compN pr = do 
   (p,_) <- compNormSt pr 
+  return p 
+
+compF :: FilePath -> IO CoreProgram 
+compF pr = do 
+  (p,_) <- compFloat pr 
   return p 
 
 typeCheckCore :: CoreProgram -> HscEnv -> IO ()
