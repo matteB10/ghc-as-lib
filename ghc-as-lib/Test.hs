@@ -46,7 +46,6 @@ test m n = do
 testTc :: ExerciseName -> IO () 
 testTc fn = do 
     files <- getAllFiles fn 
-    print files 
     compiled <- mapM compNorm files 
     mapM_ tcCore compiled 
 
