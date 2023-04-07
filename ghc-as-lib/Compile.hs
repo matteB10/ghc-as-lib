@@ -192,7 +192,7 @@ compCoreSt :: Bool -> FilePath -> Ghc (CoreProgram, HscEnv)
 compCoreSt b fp = do
   env <- getSession
   dflags <- setFlags b (holeFlags ++ genFlags)
-  setSessionDynFlags dflags
+  setSessionDynFlags (gopt_set dflags Opt_DoCoreLinting) 
   coremod <- compileToCoreModule fp
   env' <- getSession
   return (cm_binds coremod, env')
