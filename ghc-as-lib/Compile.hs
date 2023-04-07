@@ -114,20 +114,6 @@ import Data.IORef (readIORef)
 import GHC.Types.Name.Cache (NameCache(..))
 import GHC.Core.Unfold (UnfoldingOpts(..))
 
-
-
-{- DynFlags plugin options
- pluginModNames        :: [ModuleName],
-    -- ^ the @-fplugin@ flags given on the command line, in *reverse*
-    -- order that they're specified on the command line.
-  pluginModNameOpts     :: [(ModuleName,String)],
-  frontendPluginOpts    :: [String],
-    -- ^ the @-ffrontend-opt@ flags given on the command line, in *reverse*
-    -- order that they're specified on the command line.
-
-  externalPluginSpecs   :: [ExternalPluginSpec],
-
--}
   {-
   GeneralFlag's regarding hole fits 
    | Opt_ShowValidHoleFits
@@ -172,12 +158,7 @@ genFlags = [Opt_DeferTypedHoles
            ,Opt_DoEtaReduction
            ,Opt_DoLambdaEtaExpansion]
 
-compExpr :: String -> IO ()
-compExpr expr = runGhc (Just libdir) $ do
-  env <- getSession
-  dflags <- getSessionDynFlags
-  e <- parseExpr expr
-  undefined 
+
 
 setFlags :: Bool -> [GeneralFlag] -> Ghc DynFlags 
 setFlags b flags = do 
@@ -190,6 +171,196 @@ setFlags b flags = do
                           generalFlags = EnumSet.fromList flags'} 
    return dflags'   
 
+
+compToFile :: (FilePath -> IO CoreProgram) -> FilePath -> IO ()
+-- | Compile with given compile function and write to file 
+compToFile compile file = do
+  coreprog <- compile file 
+  let file_out = replaceDirectory file "./out/"
+  liftIO $ writeFile file_out $ show coreprog
+
+
+typeCheckCore :: CoreProgram -> HscEnv -> IO ()
+-- | Use Core Linter to check for problems
+typeCheckCore coreprog env = do 
+   let coretodo = CoreDoPasses [CoreTidy, CoreDesugar,CoreDesugarOpt] 
+   liftIO $ lintPassResult env coretodo (coreprog)
+
+
+compCoreSt :: Bool -> FilePath -> Ghc (CoreProgram, HscEnv)
+-- | Compile to desugaring pass 
+compCoreSt b fp = do
+  env <- getSession
+  dflags <- setFlags b (holeFlags ++ genFlags)
+  setSessionDynFlags dflags
+  coremod <- compileToCoreModule fp
+  env' <- getSession
+  return (cm_binds coremod, env')
+
+compSimpl :: Bool -> FilePath -> IO (CoreProgram, HscEnv)
+-- | Compile coreprogram, after simplifier pass 
+--   True to use the default optimisation flags 
+compSimpl use_defaultflags file = runGhc (Just libdir) $ do
+  env <- getSession 
+  dflags <- setFlags use_defaultflags (holeFlags ++ genFlags) -- set dynflags 
+  setSessionDynFlags dflags 
+  simpl <- compileToCoreSimplified file
+  env <- getSession 
+  return (cm_binds simpl, env)
+
+appTransf :: (CoreProgram, HscEnv) -> (CoreProgram-> Ghc CoreProgram) -> Ghc (CoreProgram, HscEnv)
+-- | Apply a transformation to a coreprogram and hsc env
+appTransf (p, env) transf = do 
+    setSession env 
+    p' <- transf p
+    env' <- getSession 
+    return (p',env')
+
+
+compNorm :: FilePath -> IO (CoreProgram, HscEnv)
+-- | Compile a Core program and apply transformations
+compNorm fp = runGhc (Just libdir) $ do 
+    let fname = takeWhile (/= '/') fp
+    (p,e) <- compCoreSt False fp 
+    (p1,e1) <- appTransf (p,e) repHoles 
+    (p2,e2) <- appTransf (p1,e1) (rewriteBinds fname)
+    (p3,e3) <- appTransf (p2,e2) (etaExpP)
+    -- pure transformations 
+    let p4 = etaReduce p3
+        p5 = alpha fname p4 
+        p6 = removeModInfo p5 
+        prog = p6 
+        env = e3 
+    return (prog,env)
+
+compFloat :: FilePath -> IO (CoreProgram, HscEnv) 
+-- | Compile a Core program and apply float transformations
+compFloat fp = runGhc (Just libdir) $ do
+    let fname = takeWhile (/= '/') fp
+    (p,e) <- compCoreSt False fp 
+    (p1,e1) <- appTransf (p,e) repHoles 
+    (p2,e2) <- appTransf (p1,e1) (floatOut)
+    (p3,e3) <- appTransf (p2,e2) (etaExpP)
+    -- pure transformations 
+    --let p4 = alpha fname $ etaReduce p3
+    return (p3,e3)
+
+--- Convienience functions for printing directly    
+compC :: FilePath -> IO CoreProgram
+-- | Compile to coreprogram, after desugaring pass, before simplifier 
+compC fp = runGhc (Just libdir) $ compCoreSt False fp  >>= \(p,_) -> return p 
+
+compN :: FilePath -> IO CoreProgram 
+compN fp = do 
+  (p,_) <- compNorm fp 
+  return p 
+
+compF :: FilePath -> IO CoreProgram 
+compF fp = do 
+  (p,_) <- compFloat fp 
+  return p 
+
+compS :: FilePath -> IO CoreProgram
+compS fp = do 
+  (p,_) <- compSimpl True fp 
+  return p 
+
+-- Functions to compile wiht plugins 
+compWithPlugins :: FilePath -> IO CoreProgram 
+compWithPlugins fp = runGhc (Just libdir) $ do
+    dflags <- setFlags False (holeFlags ++ genFlags ++ simplFlags) 
+    setSessionDynFlags (gopt_set dflags Opt_DoCoreLinting) 
+    dflags' <- getSessionDynFlags
+    target <- guessTarget fp Nothing
+    loadWithPlugins target [StaticPlugin $ PluginWithArgs
+            { paArguments = [],
+              paPlugin = plugin -- plugin function (imported from MyPlugin)
+            }]
+    modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
+    env <- getSession 
+    pmod <- parseModule modSum 
+    tmod <- typecheckModule pmod 
+    dmod <- desugarModule tmod 
+    names <- getNamesInScope 
+    let coremod = dm_core_module dmod 
+    -- continue with simplifier (core2core)
+    coremod' <- liftIO $ core2core env (coremod) -- should depend on which general flags are set
+    let coretodo = CoreDoPasses [CoreDesugarOpt] -- just try to do next core pass 
+    env <- getSession 
+    -- typecheck core after simplification
+    liftIO $ lintPassResult env coretodo (mg_binds coremod')
+    return $ removeModInfo $ mg_binds coremod'
+  
+  
+
+loadWithPlugins :: GhcMonad m => Target -> [StaticPlugin] -> m SuccessFlag
+-- | Load ghc with a list of plugins
+loadWithPlugins t the_plugins = do
+      -- first unload (like GHCi :load does)
+      GHC.setTargets []
+      _ <- GHC.load LoadAllTargets
+      setTargets [t] 
+
+      modifySession $ \hsc_env ->
+        let old_plugins = hsc_static_plugins hsc_env
+        in hsc_env { hsc_static_plugins = old_plugins ++ the_plugins} 
+
+      dflags <- getSessionDynFlags
+      setSessionDynFlags dflags { outputFile_ = Nothing }
+      load LoadAllTargets
+
+
+-- old functions
+-- =========================================
+compToTc :: FilePath -> IO TypecheckedSource
+-- | Compile to typechecked program (parsing, renaming, typechecking)
+compToTc fp = runGhc (Just libdir) $ do
+  env <- getSession
+  dflags <- setFlags False (holeFlags  ++ genFlags)
+  setSessionDynFlags dflags
+  target <- guessTarget fp Nothing
+  setTargets [target]
+  load LoadAllTargets
+  modSum <- getModSummary $ mkModuleName (takeBaseName fp)
+  pmod <- parseModule modSum
+  tmod <- typecheckModule pmod
+  let tprogram = tm_typechecked_source tmod 
+  liftIO $ putStrLn $ showGhc dflags tprogram
+  return tprogram 
+
+compSetSimplPass :: FilePath -> IO CoreProgram
+-- | Use the simplifier by the core2core function directly
+compSetSimplPass fp = runGhc (Just libdir) $ do
+    dflags <- setFlags True (holeFlags ++ genFlags ++ simplFlags) -- use all default flags 
+    let dflagsd = dflags 
+    setSessionDynFlags (dopt_set dflagsd Opt_D_dump_simpl_stats) 
+    setSessionDynFlags (gopt_set dflagsd Opt_DoCoreLinting) 
+    dflags' <- getSessionDynFlags
+    target <- guessTarget fp Nothing
+    setTargets [target]
+    load LoadAllTargets
+    modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
+    env <- getSession 
+    pmod <- parseModule modSum 
+    tmod <- typecheckModule pmod 
+    dmod <- desugarModule tmod 
+    names <- getNamesInScope 
+    let coremod = dm_core_module dmod 
+        coreprog = removeModInfo $ mg_binds coremod 
+        fname = takeWhile (/= '/') fp  
+    let rmmod = coremod {mg_binds = coreprog}
+    simplmod <- liftIO $ core2core env (rmmod) -- continue with simplifier 
+    let simplProg = mg_binds simplmod
+    return simplProg  
+
+
+compExpr :: String -> IO ()
+compExpr expr = runGhc (Just libdir) $ do
+  env <- getSession
+  dflags <- getSessionDynFlags
+  e <- parseExpr expr
+  undefined 
+  
 compilePrint :: FilePath -> IO ()
 -- | Compile to Core, print information from all passes and some additional information
 compilePrint file = runGhc (Just libdir) $ do
@@ -272,251 +443,6 @@ compilePrint file = runGhc (Just libdir) $ do
 
   liftIO $ banner "Print hole loc"
   liftIO $ printHoleLoc coreprog
-
-
-compToFile :: (FilePath -> IO CoreProgram) -> FilePath -> IO ()
--- | Compile with given compile function and write to file 
-compToFile compile file = do
-  coreprog <- compile file 
-  let file_out = replaceDirectory file "./out/"
-  liftIO $ writeFile file_out $ show coreprog
-
-
-compToTc :: FilePath -> IO TypecheckedSource
--- | Compile to typechecked program (parsing, renaming, typechecking)
-compToTc fp = runGhc (Just libdir) $ do
-  env <- getSession
-  dflags <- setFlags False (holeFlags  ++ genFlags)
-  setSessionDynFlags dflags
-  target <- guessTarget fp Nothing
-  setTargets [target]
-  load LoadAllTargets
-  modSum <- getModSummary $ mkModuleName (takeBaseName fp)
-  pmod <- parseModule modSum
-  tmod <- typecheckModule pmod
-  let tprogram = tm_typechecked_source tmod 
-  liftIO $ putStrLn $ showGhc dflags tprogram
-  return tprogram 
-
-
-compSimpl :: Bool -> FilePath -> IO CoreProgram
--- | Compile coreprogram, after simplifier pass 
-compSimpl use_defaultflags file = runGhc (Just libdir) $ do
-  env <- getSession 
-  dflags <- setFlags use_defaultflags (holeFlags ++ genFlags) -- set dynflags 
-  setSessionDynFlags dflags 
-  simpl <- compileToCoreSimplified file
-  return (cm_binds simpl)
-
-compSimplAnal :: FilePath -> IO CoreProgram
--- | Compile with simplifier and see simplifier stats 
-compSimplAnal fp =  runGhc (Just libdir) $ do
-  env <- getSession 
-  dflags <- setFlags False (holeFlags ++ genFlags)-- set dynflags 
-  setSessionDynFlags (dopt_set dflags Opt_D_dump_simpl_stats) -- set flag for simplification stats  
-  simpl <- compileToCoreSimplified fp
-  return (cm_binds simpl)
-
-coreSimplify :: (ModGuts, HscEnv) -> IO CoreProgram 
-coreSimplify (mg,env) = runGhc (Just libdir) $ do 
-  setSession env 
-  dflags <- setFlags False $ holeFlags ++ genFlags ++ [Opt_FloatIn, Opt_LiberateCase] ---etc 
-  setSessionDynFlags (dopt_set dflags Opt_D_dump_simpl_stats)
-  setSessionDynFlags (dopt_set dflags Opt_D_dump_simpl_stats) 
-  env' <- getSession 
-  simplmod <- liftIO $ core2core env' mg -- continue with simplifier 
-  return $ mg_binds simplmod 
-
-compSetSimplPass :: FilePath -> IO CoreProgram
--- | Try to use transformations with state, 
--- return env to core lint it later 
-compSetSimplPass fp = runGhc (Just libdir) $ do
-    dflags <- setFlags True (holeFlags ++ genFlags ++ simplFlags) -- use all default flags 
-    let dflagsd = dflags 
-    setSessionDynFlags (dopt_set dflagsd Opt_D_dump_simpl_stats) 
-    setSessionDynFlags (gopt_set dflagsd Opt_DoCoreLinting) 
-    dflags' <- getSessionDynFlags
-    target <- guessTarget fp Nothing
-    setTargets [target]
-    load LoadAllTargets
-    modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
-    env <- getSession 
-    pmod <- parseModule modSum 
-    tmod <- typecheckModule pmod 
-    dmod <- desugarModule tmod 
-    names <- getNamesInScope 
-    let coremod = dm_core_module dmod 
-        coreprog = removeModInfo $ mg_binds coremod 
-        fname = takeWhile (/= '/') fp  
-    coreProg <- repHoles coreprog -- monadic "replace holes"
-    let rmmod = coremod {mg_binds = coreProg}
-    simplmod <- liftIO $ core2core env (rmmod) -- continue with simplifier 
-    let simplProg = mg_binds simplmod
-    --liftIO $ print simplProg
-    return simplProg   
-
-compFloat :: FilePath -> IO (CoreProgram, HscEnv) 
--- | Try to use transformations with state, 
--- return env to core lint it later 
-compFloat fp = runGhc (Just libdir) $ do
-    dflags <- setFlags False (holeFlags ++ genFlags ++ simplFlags) 
-    let dflagsd = dflags 
-    setSessionDynFlags (dopt_set dflagsd Opt_D_dump_simpl_stats) 
-    setSessionDynFlags (gopt_set dflagsd Opt_DoCoreLinting) 
-    dflags' <- getSessionDynFlags
-    target <- guessTarget fp Nothing
-    setTargets [target]
-    load LoadAllTargets
-    modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
-    env <- getSession 
-    pmod <- parseModule modSum 
-    tmod <- typecheckModule pmod 
-    dmod <- desugarModule tmod 
-    names <- getNamesInScope 
-    let coremod = dm_core_module dmod 
-        coreprog = removeModInfo $ mg_binds coremod 
-        fname = takeWhile (/= '/') fp  
-    coreProg <- floatOut coreprog
-    coreProg' <- etaExpP coreProg
-    coreProg'' <- repHoles coreProg' -- monadic "replace holes"  
-    --liftIO $ putStrLn $ "rep holes:\n" ++ show coreProg 
-    --liftIO $ putStrLn $ "rewrite rec:\n" ++ show coreProg'
-    --liftIO $ putStrLn $ "eta exp:\n" ++ show coreProg''
-    
-    let renamed = alpha fname $ etaReduce coreProg''
-    return (renamed, env)   
-
-
-
-compNormSt :: FilePath -> IO (CoreProgram, HscEnv) 
--- | Try to use transformations with state, 
--- return env to core lint it later 
-compNormSt fp = runGhc (Just libdir) $ do
-    dflags <- setFlags False (holeFlags ++ genFlags ++ simplFlags) 
-    let dflagsd = dflags 
-    setSessionDynFlags (dopt_set dflagsd Opt_D_dump_simpl_stats) 
-    setSessionDynFlags (gopt_set dflagsd Opt_DoCoreLinting) 
-    dflags' <- getSessionDynFlags
-    target <- guessTarget fp Nothing
-    setTargets [target]
-    load LoadAllTargets
-    modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
-    env <- getSession 
-    pmod <- parseModule modSum 
-    tmod <- typecheckModule pmod 
-    dmod <- desugarModule tmod 
-    names <- getNamesInScope 
-    let coremod = dm_core_module dmod 
-        coreProg = removeModInfo $ mg_binds coremod 
-        fname = takeWhile (/= '/') fp  
-    coreProg' <- repHoles coreProg -- monadic "replace holes"
-    coreProg'' <- rewriteBinds fname coreProg' -- "inline" binders 
-    coreProg''' <- etaExpP coreProg''
-    --liftIO $ putStrLn $ "rep holes:\n" ++ show coreProg 
-    --liftIO $ putStrLn $ "rewrite rec:\n" ++ show coreProg'
-    --liftIO $ putStrLn $ "eta exp:\n" ++ show coreProg''
-    
-    let renamed = alpha fname $ etaReduce coreProg'''
-                
-    return (renamed, env)   
-
-compN :: FilePath -> IO CoreProgram 
-compN pr = do 
-  (p,_) <- compNormSt pr 
-  return p 
-
-compF :: FilePath -> IO CoreProgram 
-compF pr = do 
-  (p,_) <- compFloat pr 
-  return p 
-
-typeCheckCore :: CoreProgram -> HscEnv -> IO ()
--- | Use Core Linter to check for problems
-typeCheckCore coreprog env = do 
-   let coretodo = CoreDoPasses [CoreTidy, CoreDesugar,CoreDesugarOpt]
-   liftIO $ lintPassResult env coretodo (coreprog)
-
-compWithPlugins :: FilePath -> IO CoreProgram 
-compWithPlugins fp = runGhc (Just libdir) $ do
-    dflags <- setFlags False (holeFlags ++ genFlags ++ simplFlags) 
-    setSessionDynFlags (gopt_set dflags Opt_DoCoreLinting) 
-    dflags' <- getSessionDynFlags
-    target <- guessTarget fp Nothing
-    loadWithPlugins target [StaticPlugin $ PluginWithArgs
-            { paArguments = [],
-              paPlugin = plugin -- plugin function (imported from MyPlugin)
-            }]
-    modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
-    env <- getSession 
-    pmod <- parseModule modSum 
-    tmod <- typecheckModule pmod 
-    dmod <- desugarModule tmod 
-    names <- getNamesInScope 
-    let coremod = dm_core_module dmod 
-    -- continue with simplifier (core2core)
-    coremod' <- liftIO $ core2core env (coremod) -- should depend on which general flags are set
-    let coretodo = CoreDoPasses [CoreDesugarOpt] -- just try to do next core pass 
-    env <- getSession 
-    -- typecheck core after simplification
-    liftIO $ lintPassResult env coretodo (mg_binds coremod')
-    return $ removeModInfo $ mg_binds coremod'
-  
-  
-
-loadWithPlugins :: GhcMonad m => Target -> [StaticPlugin] -> m SuccessFlag
--- | Load ghc with a list of plugins
-loadWithPlugins t the_plugins = do
-      -- first unload (like GHCi :load does)
-      GHC.setTargets []
-      _ <- GHC.load LoadAllTargets
-
-      --target <- guessTarget "MyPlugin.hs" Nothing
-      setTargets [t] 
-
-      modifySession $ \hsc_env ->
-        let old_plugins = hsc_static_plugins hsc_env
-        in hsc_env { hsc_static_plugins = old_plugins ++ the_plugins} 
-
-      dflags <- getSessionDynFlags
-      setSessionDynFlags dflags { outputFile_ = Nothing }
-      load LoadAllTargets
-
-
-compCore :: Bool -> FilePath -> IO CoreProgram
--- | Compile to coreprogram, after desugaring pass, before simplifier 
-compCore b fp = runGhc (Just libdir) $ do
-  env <- getSession
-  dflags <- setFlags b (holeFlags ++ genFlags)
-  setSessionDynFlags dflags
-  coremod <- compileToCoreModule fp
-  return $ cm_binds coremod 
-
-
-compNormNoRename :: FilePath -> IO CoreProgram 
-compNormNoRename fp = runGhc (Just libdir) $ do
-    dflags <- setFlags False (holeFlags ++ genFlags ++ simplFlags) 
-    setSessionDynFlags (gopt_set dflags Opt_DoCoreLinting) 
-    dflags' <- getSessionDynFlags
-    coremod' <- liftIO $ compCore False fp 
-    let fname = takeWhile (/= '/') fp                        -- but seems to do a lot of simplifications anyway 
-        normalised_prog = normalise' fname coremod'
-        coretodo = CoreDoPasses [CoreDesugarOpt, CoreDesugar] -- just try to do next core pass 
-    env <- getSession 
-    -- typecheck core after transformation (except renaming transformations)
-    -- since GHC's Subst environment is not updated when renaming 
-    liftIO $ lintPassResult env coretodo (normalised_prog)
-    return normalised_prog
-
-
-compNorm :: FilePath -> IO CoreProgram 
-compNorm fp = do  
-    p <- compCore False fp 
-    let fname = takeWhile (/= '/') fp 
-    return $ normalise fname p 
-
-
-
-
 
 {-
 Maybe this gives hints on how to set/unset certain simplificatoins

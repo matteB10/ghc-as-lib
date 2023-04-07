@@ -46,8 +46,12 @@ test m n = do
 testTc :: ExerciseName -> IO () 
 testTc fn = do 
     files <- getAllFiles fn 
-    compiled <- mapM compNormSt files 
+    print files 
+    compiled <- mapM compNorm files 
     mapM_ tcCore compiled 
+
+tcCore :: (CoreProgram, HscEnv) -> IO () 
+tcCore = uncurry typeCheckCore
 
 testPr :: ExerciseName -> [(FilePath,FilePath)] -> IO () 
 -- | Test and print test by test 
@@ -105,10 +109,10 @@ compare_ comp_pass fp1 fp2 = do
 
 
 compare_desugar, compare_simpl, compare_norm, compare_float :: (FilePath,FilePath) -> IO Bool 
-compare_desugar = uncurry $ compare_ (compCore False) 
-compare_simpl = uncurry $ compare_ compSetSimplPass 
-compare_norm = uncurry $ compare_ compN
-compare_float = uncurry $ compare_ compF
+compare_desugar = uncurry $ compare_ compC 
+compare_simpl   = uncurry $ compare_ compS 
+compare_norm    = uncurry $ compare_ compN
+compare_float   = uncurry $ compare_ compF
 
 matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
 matchSuffixedFiles folderPath = do
@@ -147,18 +151,4 @@ failTests ename = matchSuffixedFiles ("./"++ename++"/bad/")
 normaliseTests :: ExerciseName -> IO [(FilePath, FilePath)]
 normaliseTests ename = matchSuffixedFiles ("./"++ename++"/norm/") 
 
-tcCore :: (CoreProgram, HscEnv) -> IO () 
-tcCore = uncurry typeCheckCore
 
-
-m = compCore False "other/good/Mod4.hs" 
-t4 = compCore False "other/good/Test4.hs" 
-t = compCore False "other/good/Test.hs" 
-
-
-
-ct :: IO CoreProgram 
-ct = do 
-  t <- compCore False "myreverse/good/Test3.hs"
-  let t' = normalise "myreverse" t  
-  return t'  
