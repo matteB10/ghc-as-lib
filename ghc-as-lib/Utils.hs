@@ -54,35 +54,25 @@ sp x y = x ++ " " ++ y
 nl x y = x ++ "\n" ++ y
 cm x y = x ++ " , " ++ y
 
+getExerciseName :: FilePath -> ExerciseName 
+-- very hard coded, works for current file structure
+getExerciseName fp = takeWhile (/= '/') $ drop 1 $ dropWhile (/= '/') fp 
+
 
 varNameUnique :: Var -> String 
 varNameUnique = showSDocUnsafe . ppr 
 
-typeE :: Expr Var -> Type
--- TODO: CHEK OUT `exprType` in GHC
--- | Experimental function returning the type of a Core expr
-typeE (Var id)       = varType id
-typeE (Type t)       = t
-typeE (Lit l)        = LitTy $ StrTyLit (fsLit (show l))
-typeE (App e arg)    = case isTyCon (typeE e) of
-                        Just t -> TyConApp t [typeE arg]
-                        Nothing -> AppTy (typeE e) (typeE arg)
-typeE (Lam b e)      = FunTy {ft_af =  VisArg, ft_arg = tyVarKind b, ft_res = typeE e, ft_mult = typeE e}
-typeE (Case _ _ t _) = t
-typeE (Let b e)      = typeE e
-typeE (Cast e co)    = CastTy (typeE e) co
-
-isTyCon :: Type -> Maybe TyCon
-isTyCon (TyConApp t _ ) = Just t
-isTyCon _               = Nothing
 
 isHoleExpr :: Expr Var -> Bool
 isHoleExpr (Case e _ t _) = not (all isNothing (containsTErr e))
 isHoleExpr _              = False
 
-isHole' :: Expr Var -> Bool
-isHole' (Var v) = take 4 (getOccString v) == "hole"
-isHole' _       = False 
+isHoleVar :: Var -> Bool
+isHoleVar v = take 4 (getOccString v) == "hole"
+
+isHoleVarExpr :: Expr Var -> Bool
+isHoleVarExpr (Var v) = isHoleVar v 
+isHoleVarExpr _ = False 
 
 containsTErr :: Expr Var -> [Maybe (Expr Var)]
 containsTErr (Var id)       | isVarTErr id = [Just $ Var id]

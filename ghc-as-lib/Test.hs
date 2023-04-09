@@ -43,20 +43,23 @@ test m n = do
   normaliseTests n >>= \f -> banner "Expected match with normalisation: "
               >> tf n f
 
+
 testTc :: ExerciseName -> IO ()
 testTc fn = do
-    files <- getExFiles fn 
+    files <- getExFiles fn
     compiled <- mapM compNorm files
     mapM_ tcCore compiled
+    putStrLn "All tests typechecked"
 
-testTcAll :: IO () 
-testTcAll = do 
-    files <- getFilePaths path 
-    compiled <- mapM compNorm files 
-    mapM_ tcCore compiled 
+testTcAll :: IO ()
+testTcAll = do
+    files <- getFilePaths path
+    compiled <- mapM compNorm files
+    mapM_ tcCore compiled
+    putStrLn $ "All" `sp` show (length compiled) `sp` "tests typechecked"
 
 tcCore :: (CoreProgram, HscEnv) -> IO ()
-tcCore = uncurry typeCheckCore
+tcCore pe = uncurry typeCheckCore pe -- >> putStrLn "Typecheck Ok"
 
 testPr :: ExerciseName -> [(FilePath,FilePath)] -> IO ()
 -- | Test and print test by test 
@@ -119,6 +122,14 @@ compare_simpl   = uncurry $ compare_ compS
 compare_norm    = uncurry $ compare_ compN
 compare_float   = uncurry $ compare_ compF
 
+
+-- different transformations
+
+compEtaREd fp = ghcToIO $ do 
+        (p,e) <- compCoreSt False fp 
+        return (etaReduce p,e)
+
+
 matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
 matchSuffixedFiles folderPath = do
   files <- listDirectory folderPath
@@ -159,7 +170,7 @@ path = "./testfiles/"
 
 getExFiles :: ExerciseName -> IO [FilePath]
 getExFiles n = do
-  getFilePaths $ path ++ n 
+  getFilePaths $ path ++ n
 
 succTests :: ExerciseName -> IO [(FilePath, FilePath)]
 succTests ename = matchSuffixedFiles (path++ename++"/good/")

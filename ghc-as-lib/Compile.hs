@@ -93,9 +93,9 @@ import Control.Monad (when)
 
 import Similar
 import Instance 
-import Transform (etaReduce, alpha, removeModInfo, repHoles, rewriteRecGhc, normalise, normalise', etaReduceTy, etaExpP, rewriteBinds, floatOut)
+import Transform (etaReduce, alpha, removeModInfo, repHoles, normalise, normalise', etaExpP, rewriteBinds, floatOut)
 import Utils
-    ( banner, findLiterals, printHoleLoc, showGhc, ExerciseName ) 
+    ( banner, findLiterals, printHoleLoc, showGhc, ExerciseName, getExerciseName ) 
 import GHC.Core.Opt.Monad (CoreToDo (..), getRuleBase, CoreM, SimplMode (sm_pre_inline))
 import GHC.Core.Opt.Pipeline (core2core)
 import GHC.Iface.Ext.Utils (getNameScope)
@@ -208,42 +208,53 @@ compSimpl use_defaultflags file = runGhc (Just libdir) $ do
   env <- getSession 
   return (cm_binds simpl, env)
 
-appTransf :: (CoreProgram, HscEnv) -> (CoreProgram-> Ghc CoreProgram) -> Ghc (CoreProgram, HscEnv)
+
+compCore :: FilePath -> IO (CoreProgram, HscEnv)
+-- | Compile a Core program and apply transformations
+compCore fp = runGhc (Just libdir) $ do 
+    let fname = getExerciseName fp
+    (prog,env) <- compCoreSt False fp 
+    return (prog,env)
+
+
+appTransf :: (CoreProgram-> Ghc CoreProgram) -> (CoreProgram, HscEnv)  -> Ghc (CoreProgram, HscEnv)
 -- | Apply a transformation to a coreprogram and hsc env
-appTransf (p, env) transf = do 
+appTransf transf (p, env) = do 
     setSession env 
     p' <- transf p
     env' <- getSession 
     return (p',env')
 
+ghcToIO :: Ghc (CoreProgram, HscEnv) -> IO (CoreProgram, HscEnv)
+ghcToIO x = runGhc (Just libdir) $ do x 
 
 compNorm :: FilePath -> IO (CoreProgram, HscEnv)
 -- | Compile a Core program and apply transformations
 compNorm fp = runGhc (Just libdir) $ do 
-    let fname = takeWhile (/= '/') fp
-    (p,e) <- compCoreSt False fp 
-    (p1,e1) <- appTransf (p,e) repHoles 
-    (p2,e2) <- appTransf (p1,e1) (rewriteBinds fname)
-    (p3,e3) <- appTransf (p2,e2) (etaExpP)
-    -- pure transformations 
-    let p4 = etaReduce p3
-        p5 = alpha fname p4 
-        p6 = removeModInfo p5 
-        prog = p6 
-        env = e3 
+    let fname = getExerciseName fp
+    (p',e) <- compCoreSt False fp 
+    let p = removeModInfo p'   
+    (p1,e1) <- appTransf repHoles (p,e)
+    (p2,e2) <- appTransf (etaExpP) (p1,e1) 
+    (p3,e3) <- appTransf (rewriteBinds fname) (p2,e2)
+    --(p4,e4) <- appTransf (floatOut) (p3,e3) 
+    let
+        p5 = alpha fname p3
+        prog = p5
+        env = e3
     return (prog,env)
 
 compFloat :: FilePath -> IO (CoreProgram, HscEnv) 
 -- | Compile a Core program and apply float transformations
 compFloat fp = runGhc (Just libdir) $ do
     let fname = takeWhile (/= '/') fp
-    (p,e) <- compCoreSt False fp 
-    (p1,e1) <- appTransf (p,e) repHoles 
-    (p2,e2) <- appTransf (p1,e1) (floatOut)
-    (p3,e3) <- appTransf (p2,e2) (etaExpP)
-    -- pure transformations 
-    --let p4 = alpha fname $ etaReduce p3
-    return (p3,e3)
+    (p',e) <- compCoreSt False fp 
+    let p = removeModInfo p' 
+    --(p1,e1) <- appTransf (p,e) repHoles 
+    (p2,e2) <- appTransf (floatOut) (p,e)
+    (p3,e3) <- appTransf (etaExpP) (p2,e2)
+    let p4 = alpha fname p3
+    return (p4,e3)
 
 --- Convienience functions for printing directly    
 compC :: FilePath -> IO CoreProgram
@@ -284,12 +295,12 @@ compWithPlugins fp = runGhc (Just libdir) $ do
     names <- getNamesInScope 
     let coremod = dm_core_module dmod 
     -- continue with simplifier (core2core)
-    coremod' <- liftIO $ core2core env (coremod) -- should depend on which general flags are set
+    --coremod' <- liftIO $ core2core env (coremod) -- should depend on which general flags are set
     let coretodo = CoreDoPasses [CoreDesugarOpt] -- just try to do next core pass 
     env <- getSession 
     -- typecheck core after simplification
-    liftIO $ lintPassResult env coretodo (mg_binds coremod')
-    return $ removeModInfo $ mg_binds coremod'
+    liftIO $ lintPassResult env coretodo (mg_binds coremod)
+    return (removeModInfo (mg_binds coremod))
   
   
 

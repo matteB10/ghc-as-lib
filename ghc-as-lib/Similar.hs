@@ -20,7 +20,7 @@ import GHC.Core.DataCon (DataCon(..), dataConName)
 import GHC.Utils.Outputable (showSDocUnsafe, Outputable (ppr))
 import GHC.Types.Literal (Literal(..), LitNumType)
 
-import Utils ( isHole', isHoleExpr, sp) 
+import Utils ( isHoleVar, sp, isHoleExpr, isHoleVarExpr) 
 import GHC.Cmm (isAssociativeMachOp)
 import GHC.Core.Coercion (eqCoercion)
 
@@ -61,8 +61,10 @@ instance Similar (Expr Var) where
                                               b ~== b' && e ~== e'
     (Coercion c) ~== (Coercion c')          = --trace "COERCION"
                                               c ~== c' 
-    x ~== y                                 | isHole' x || isHole' y = --trace ("isHole:" ++ "x: " ++ show x ++ "y: " ++ show y) 
+    x ~== y                                 | isHoleVarExpr x || isHoleVarExpr y = --trace ("isHole:" ++ "x: " ++ show x ++ "y: " ++ show y) 
                                                                        True -- if hole replaced with hole variable
+                                            | isHoleExpr x || isHoleExpr y =  -- if before repHoles pass 
+                                                                            True 
                                             | otherwise = --trace ("OTHER: X:" `sp` show x `sp` " Y: " `sp` show y)
                                                           False
 
