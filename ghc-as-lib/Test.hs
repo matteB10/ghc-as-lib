@@ -1,8 +1,9 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# HLINT ignore "Use <&>" #-}
 module Test where
-
 
 import GHC.Core (CoreProgram)
 import GHC (HscEnv)
@@ -16,12 +17,18 @@ import HoleMatches
 import PrettyPrint
 
 import System.Directory (listDirectory, doesDirectoryExist)
-import System.FilePath ((</>), takeDirectory, takeExtension)
+import System.FilePath ((</>), takeDirectory, takeExtension, takeBaseName)
 import Data.List (isSuffixOf, isPrefixOf)
 import Data.Char (isDigit)
 import Control.Lens (rewrite)
 import Test.QuickCheck (ASCIIString(getASCIIString))
 
+import System.IO
+import System.IO.Temp
+import Data.Aeson
+import qualified Data.ByteString.Lazy as B
+import GHC.Generics
+import Control.Monad (when)
 
 
 data Mode = DEBUG -- print which pair of files compared, and the result 
@@ -43,6 +50,31 @@ test m n = do
   normaliseTests n >>= \f -> banner "Expected match with normalisation: "
               >> tf n f
 
+testAll :: (FilePath -> IO CoreProgram) -> IO ()
+-- | Test and output number of matched tests
+testAll compilefun = do
+  exercises <- listDirectory path
+  print exercises
+  let f  = uncurry $ compare_ compilefun
+  st <- mapM succTests exercises
+  ft <- mapM failTests exercises
+  nt <- mapM normaliseTests exercises
+  sr <- mapM f (concat st)
+  fr <- mapM f (concat ft)
+  nr <- mapM f (concat nt)
+  let totsucc = length (concat st)
+      totfail = length (concat ft)
+      totnorm = length (concat nt)
+      success = length (filter id sr)
+      fail    = length (filter not fr)
+      norm    = length (filter id nr)
+  putStrLn $ showRes success totsucc "success"
+  putStrLn $ showRes fail totfail "fail"
+  putStrLn $ showRes norm totnorm "success with normalisation"
+  putStrLn $ "total: " ++ showRes (success + fail + norm) (totsucc + totfail + totnorm) "results"
+    where showRes res tot expres = show res ++ "/" ++ show tot `sp` "of expected" `sp` expres
+
+
 
 testTc :: ExerciseName -> IO ()
 testTc fn = do
@@ -51,10 +83,11 @@ testTc fn = do
     mapM_ tcCore compiled
     putStrLn "All tests typechecked"
 
-testTcAll :: IO ()
-testTcAll = do
+testTcAll :: (FilePath -> IO (CoreProgram, HscEnv)) -> IO ()
+-- | Core lint (typecheck) core program after applying given function f 
+testTcAll f = do
     files <- getFilePaths path
-    compiled <- mapM compNorm files
+    compiled <- mapM f files
     mapM_ tcCore compiled
     putStrLn $ "All" `sp` show (length compiled) `sp` "tests typechecked"
 
@@ -73,6 +106,8 @@ testPr n (t:ts) = testPr' n t >> testPr n ts
           putStr "programs match: " >> compare_simpl ps >>= print
           putStrLn  "Manual transformations:"
           putStr "programs match: " >> compare_norm ps >>= print
+          putStrLn "Float transformations"
+          putStr "programs match" >> compare_float ps >>= print
 
 testPrA :: ExerciseName -> [(FilePath,FilePath)] -> IO ()
 -- | Test and print all  
@@ -125,9 +160,9 @@ compare_float   = uncurry $ compare_ compF
 
 -- different transformations
 
-compEtaREd fp = ghcToIO $ do 
-        (p,e) <- compCoreSt False fp 
-        return (etaReduce p,e)
+compEtaExp fp = ghcToIO $ do
+        (p,e) <- compCoreSt False fp
+        appTransf repHoles (p,e) >>= appTransf etaExpP
 
 
 matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
@@ -156,9 +191,11 @@ getFilePaths folderPath = do
     then do
       dircontent <- listDirectory folderPath
       subFiles <- mapM getFilePaths [folderPath </> f | f <- dircontent]
-      return  $ filter isFile $ map (folderPath </>) dircontent ++ concat subFiles
+      let content = map (folderPath </>) dircontent ++ concat subFiles
+      return $ filter (\fp -> (".hs" `isSuffixOf` fp) && not (isConfig fp) && isFile fp) content
     else
       return []
+    where isConfig fp = "Config.hs" `isSuffixOf` fp
 
 isFile :: FilePath -> Bool
 isFile path = not (null (takeExtension path))
@@ -182,3 +219,80 @@ normaliseTests :: ExerciseName -> IO [(FilePath, FilePath)]
 normaliseTests ename = matchSuffixedFiles (path++ename++"/norm/")
 
 
+
+-- ============= TEST REAL STUDENT SOLUTIONS =================
+
+
+data TestItem = TestItem { exerciseid :: String
+                         , input      :: String
+                         , category   :: String
+                         , typesig    :: String}
+      deriving (Generic, Show)
+
+data Category = Success Bool | Unknown Bool | MissingCase Bool | Ontrack Bool | TestPassed Bool  
+
+instance ToJSON TestItem where
+    toEncoding = genericToEncoding defaultOptions
+
+instance FromJSON TestItem
+  
+
+decodeJson :: FilePath -> IO [TestItem]
+decodeJson fp = do
+  inputJson <- B.readFile fp
+  let inputData = decode inputJson :: Maybe [TestItem]
+  case inputData of
+    Just d -> return (take 100 d) -- more than 100 will eat all the memory
+    Nothing -> error $ "Could not read " ++ fp
+
+msPath = "./modelsolutions/"
+
+testItems :: FilePath -> IO ()
+testItems jsonfile = do
+  items <- decodeJson jsonfile
+  results <- mapM testItem items
+  print results 
+  let exps = filter (\(x,y,z) -> (x,y,z)==(True,True,z)) results -- same results as in Ask-Elle 
+      expf = filter (\(x,y,z) -> (x,y,z)==(False,False,z)) results
+      succ = filter (\(x,y,z) -> (x,y,z)==(False,True,z)) results
+      fail = filter (\(x,y,z) -> (x,y,z)==(True,False,z)) results
+      nboftest = f items
+      f = show . length 
+  putStrLn $ f exps ++ "/" ++ nboftest ++ " tests gave same successful result as Ask-Elle"
+  putStrLn $ f expf ++ "/" ++ nboftest ++ " tests gave same failed result as Ask-Elle"
+  putStrLn $ f succ ++ "/" ++ nboftest ++ " could now be matched"
+  putStrLn $ f fail ++ "/" ++ nboftest ++ " expected to match, but failed"
+  putStrLn "printing all failed attempts:"
+  mapM_ (putStrLn . (\(_,_,prog) -> prog ++ "\n")) expf 
+  mapM_ (putStrLn . (\(_,_,prog) -> prog ++ "\n")) fail  
+  
+
+
+tempHeader = "{-# OPTIONS_GHC -Wno-typed-holes #-} \n module Temp where\n"
+
+writeProg :: TestItem -> IO () 
+writeProg ti = do 
+    let inputstr = tempHeader ++ typesig ti `nl` input ti
+    -- Write the inputstr to the temporary file
+    handle <- openFile "studentfiles/Temp.hs" WriteMode
+    hPutStrLn handle inputstr 
+    hFlush handle 
+    hClose handle 
+
+testItem :: TestItem -> IO (Bool,Bool,String)
+-- | (True,True) : Success in Ask-Elle, Success in ghc 
+--   (False,False) : Unknown in Ask-Eller, Failure in ghc 
+--   (False, True) : Unknown in Ask-Elle, success in ghc 
+testItem ti = do
+    writeProg ti 
+    stProg <- compN "./studentfiles/Temp.hs" -- student progrm
+    modelFiles <- getFilePaths (msPath ++ exerciseid ti)
+    mProgs <- mapM compN modelFiles
+    let b = any (stProg ~==) mProgs
+
+    case category ti of
+        "Complete"   -> return (True,b,input ti)  -- program completed
+        "OnTrack"    -> return (True,b,input ti)  -- recognised as on track
+        "Missing"    -> return (False,b,input ti) -- missing cases (not defined on all input)
+        "TestPassed" -> return (False,b,input ti) -- quickcheck tests passed, but could not be matched 
+        "Unknown"    -> return (False,b,input ti) -- unknown
