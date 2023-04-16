@@ -106,8 +106,8 @@ testPr n (t:ts) = testPr' n t >> testPr n ts
           putStr "programs match: " >> compare_simpl ps >>= print
           putStrLn  "Manual transformations:"
           putStr "programs match: " >> compare_norm ps >>= print
-          putStrLn "Float transformations"
-          putStr "programs match" >> compare_float ps >>= print
+          --putStrLn "Float transformations"
+          --putStr "programs match" >> compare_float ps >>= print
 
 testPrA :: ExerciseName -> [(FilePath,FilePath)] -> IO ()
 -- | Test and print all  
@@ -118,8 +118,8 @@ testPrA n ps = do
   putStr "programs match" >> mapM compare_simpl ps >>= print
   putStrLn  "Manual transformations:"
   putStr "programs match" >> mapM compare_norm ps >>= print
-  putStrLn "Float transformations"
-  putStr "programs match" >> mapM compare_float ps >>= print
+  --putStrLn "Float transformations"
+  --putStr "programs match" >> mapM compare_float ps >>= print
 
 
 comparePrint :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO ()
@@ -229,13 +229,13 @@ data TestItem = TestItem { exerciseid :: String
                          , typesig    :: String}
       deriving (Generic, Show)
 
-data Category = Success Bool | Unknown Bool | MissingCase Bool | Ontrack Bool | TestPassed Bool  
+data Category = Success Bool | Unknown Bool | MissingCase Bool | Ontrack Bool | TestPassed Bool
 
 instance ToJSON TestItem where
     toEncoding = genericToEncoding defaultOptions
 
 instance FromJSON TestItem
-  
+
 
 decodeJson :: FilePath -> IO [TestItem]
 decodeJson fp = do
@@ -251,40 +251,46 @@ testItems :: FilePath -> IO ()
 testItems jsonfile = do
   items <- decodeJson jsonfile
   results <- mapM testItem items
-  print results 
   let exps = filter (\(x,y,z) -> (x,y,z)==(True,True,z)) results -- same results as in Ask-Elle 
       expf = filter (\(x,y,z) -> (x,y,z)==(False,False,z)) results
       succ = filter (\(x,y,z) -> (x,y,z)==(False,True,z)) results
       fail = filter (\(x,y,z) -> (x,y,z)==(True,False,z)) results
       nboftest = f items
-      f = show . length 
+      f = show . length
+  putStrLn "printing expectef fail attempts:"
+  mapM_ (\(_,_,prog) -> printProg prog) expf 
+  putStrLn "printing failed attempts:"
+  mapM_ (\(_,_,prog) -> printProg prog) fail
   putStrLn $ f exps ++ "/" ++ nboftest ++ " tests gave same successful result as Ask-Elle"
   putStrLn $ f expf ++ "/" ++ nboftest ++ " tests gave same failed result as Ask-Elle"
   putStrLn $ f succ ++ "/" ++ nboftest ++ " could now be matched"
   putStrLn $ f fail ++ "/" ++ nboftest ++ " expected to match, but failed"
-  putStrLn "printing all failed attempts:"
-  mapM_ (putStrLn . (\(_,_,prog) -> prog ++ "\n")) expf 
-  mapM_ (putStrLn . (\(_,_,prog) -> prog ++ "\n")) fail  
-  
+ 
 
+
+
+printProg prog = do
+     putStrLn "----------------------------------"
+     putStrLn prog
+     putStrLn "----------------------------------\n"
 
 tempHeader = "{-# OPTIONS_GHC -Wno-typed-holes #-} \n module Temp where\n"
 
-writeProg :: TestItem -> IO () 
-writeProg ti = do 
+writeProg :: TestItem -> IO ()
+writeProg ti = do
     let inputstr = tempHeader ++ typesig ti `nl` input ti
     -- Write the inputstr to the temporary file
     handle <- openFile "studentfiles/Temp.hs" WriteMode
-    hPutStrLn handle inputstr 
-    hFlush handle 
-    hClose handle 
+    hPutStrLn handle inputstr
+    hFlush handle
+    hClose handle
 
 testItem :: TestItem -> IO (Bool,Bool,String)
 -- | (True,True) : Success in Ask-Elle, Success in ghc 
 --   (False,False) : Unknown in Ask-Eller, Failure in ghc 
 --   (False, True) : Unknown in Ask-Elle, success in ghc 
 testItem ti = do
-    writeProg ti 
+    writeProg ti
     stProg <- compN "./studentfiles/Temp.hs" -- student progrm
     modelFiles <- getFilePaths (msPath ++ exerciseid ti)
     mProgs <- mapM compN modelFiles

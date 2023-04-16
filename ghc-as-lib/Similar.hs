@@ -87,7 +87,7 @@ instance Similar CoercionR where
 instance Similar Literal where 
   (LitString l) ~== (LitString l')      = l == l' 
   (LitChar c) ~== (LitChar c')          = c == c'  
-  (LitNumber ti i) ~== (LitNumber tj j) = ti == tj && i == j -- disregarding litnumtype for now 
+  (LitNumber ti i) ~== (LitNumber tj j) = ti == tj && i == j 
   (LitFloat r) ~== (LitFloat p)         = r == p  
   (LitDouble r) ~== (LitDouble p)       = r == p 
   l ~== k                               = True 
@@ -125,7 +125,7 @@ instance Similar Type where
 -- ==================
 
 instance Eq (Bind Var) where 
-    (Rec es) == (Rec xs) = all (\((b,e),(b',e')) -> b ~== b' && e ~== e') (zip es xs)
+    (Rec es) == (Rec xs) = all (\((b,e),(b',e')) -> b `eqVar` b' && e == e') (zip es xs)
     (NonRec v b) == (NonRec i c) = v `eqVar` i && b == c 
     x == y = False 
 

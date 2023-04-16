@@ -39,6 +39,9 @@ library
                       ,optparse-applicative
                       ,template-haskell 
                       ,utility-ht
+                      ,aeson
+                      ,temporary
+                      ,bytestring
                       ,MyPlug
                       
     default-language: Haskell2010

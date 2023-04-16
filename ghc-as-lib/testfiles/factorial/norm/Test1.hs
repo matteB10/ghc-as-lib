@@ -3,9 +3,14 @@
 
 module Test1 where 
 
-factorial :: (Eq t, Num t) => t -> t 
+
+
+factorial :: Integer -> Integer 
 factorial = f   
 
+f :: Integer -> Integer 
 f 0 = 1 
 f m = m * f (m - 1)  
+
+
 

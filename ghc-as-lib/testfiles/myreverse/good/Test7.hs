@@ -1,4 +1,4 @@
-module Test7 where 
+module Test7  where 
 
 myreverse :: [a] -> [a]
 myreverse = reverse' [] 
@@ -6,3 +6,4 @@ myreverse = reverse' []
 reverse' :: [a] -> [a] -> [a]
 reverse' acc [] = acc
 reverse' acc (x:xs) = reverse' (x:acc) xs
+

@@ -2,7 +2,7 @@
 module Mod1 where 
 
 
---factorial :: (Eq t, Num t) => t -> t
+factorial :: Integer -> Integer 
 factorial 0 = 1 
 factorial m = m * factorial (m - 1)   
 

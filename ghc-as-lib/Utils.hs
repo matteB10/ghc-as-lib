@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Utils where 
 
 
@@ -31,6 +32,8 @@ import Control.Monad (when)
 -- Local imports 
 import Instance 
 import GHC.Utils.Outputable
+import Language.Haskell.TH.Lib (conT)
+import GHC.RTS.Flags (getParFlags)
 
 type ExerciseName = String 
 
@@ -64,8 +67,17 @@ varNameUnique = showSDocUnsafe . ppr
 
 
 isHoleExpr :: Expr Var -> Bool
-isHoleExpr (Case e _ t _) = not (all isNothing (containsTErr e))
+isHoleExpr (Case e _ t _) = case getTypErr e of 
+                                Just pe -> True 
+                                _ -> False 
 isHoleExpr _              = False
+
+isPatError :: Expr Var -> Bool 
+isPatError (Case e _ t _) = case getPatErr e of 
+                                Just pe -> True 
+                                _ -> False 
+isPatError _              = False
+
 
 isHoleVar :: Var -> Bool
 isHoleVar v = take 4 (getOccString v) == "hole"
@@ -74,23 +86,40 @@ isHoleVarExpr :: Expr Var -> Bool
 isHoleVarExpr (Var v) = isHoleVar v 
 isHoleVarExpr _ = False 
 
-containsTErr :: Expr Var -> [Maybe (Expr Var)]
-containsTErr (Var id)       | isVarTErr id = [Just $ Var id]
+getTypErr :: Expr Var -> Maybe Var
+getTypErr = getErrVar "typeError" 
+
+getPatErr :: Expr Var -> Maybe Var 
+getPatErr = getErrVar "patError"
+
+getErrVar :: String -> Expr Var -> Maybe Var
+getErrVar errstr e | null errv = Nothing 
+                   | otherwise = head errv -- just return first found error variable of specified error 
+    where errv = [Just v | (Var v) <- universe e, getOccString v == errstr]
+
+{- containsErr :: String -> Expr Var -> Maybe (Expr Var)
+containsErr err = transformBiM $ \ex -> case ex :: Expr Var of 
+    e@(Var id) | isErrVar err id -> Just e 
+               | otherwise       -> Nothing 
+    _ -> Nothing  
+
+containsTErr :: String -> Expr Var -> [Maybe (Expr Var)]
+containsTErr err (Var id)   | isErrVar err id = [Just $ Var id]
                             | otherwise = [Nothing]
-containsTErr (Lit l)        = [Nothing]
-containsTErr (App e arg)    = containsTErr e ++ containsTErr arg
-containsTErr (Lam b e)      = containsTErr e
-containsTErr (Case e _ _ _) = containsTErr e
-containsTErr (Cast e co)    = containsTErr e
-containsTErr _              = [Nothing]
+containsTErr _ (Lit l)        = [Nothing]
+containsTErr err (App e arg)    = containsTErr err e ++ containsTErr err arg
+containsTErr err (Lam b e)      = containsTErr err e
+containsTErr err (Case e _ _ _) = containsTErr err e
+containsTErr err (Cast e co)    = containsTErr err e
+containsTErr _ _              = [Nothing] -}
 
 
 isVar :: Expr Var -> Bool
 isVar (Var _) = True
 isVar _       = False
 
-isVarTErr :: Var -> Bool
-isVarTErr v = getOccString v == "typeError"
+isErrVar :: String -> Var -> Bool
+isErrVar s v = getOccString v == s 
 
 isVarMod :: Var -> Bool
 isVarMod v = "$trModule" == take 9 (getOccString v)
