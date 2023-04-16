@@ -85,7 +85,7 @@ instance Similar CoercionR where
     _ ~== _ = True --eqCoercion might need causion for uniques of type variables 
 
 instance Similar Literal where 
-  (LitString l) ~== (LitString l')      = l == l' 
+  (LitString l) ~== (LitString l')      = True --l == l' 
   (LitChar c) ~== (LitChar c')          = c == c'  
   (LitNumber ti i) ~== (LitNumber tj j) = ti == tj && i == j 
   (LitFloat r) ~== (LitFloat p)         = r == p  

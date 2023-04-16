@@ -39,7 +39,7 @@ import GHC.Core.TyCon (TyCon, mkPrelTyConRepName)
 
 import GHC.Types.SrcLoc ( mkGeneralSrcSpan, srcLocSpan, GenLocated )
 import GHC.Types.Id.Info (IdDetails(VanillaId), vanillaIdInfo, pprIdDetails, setOccInfo, IdInfo, setArityInfo)
-import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc, floatBindings, FloatOutSwitches (..), uniqAway, MonadUnique (getUniqueSupplyM, getUniqueM), DynFlags (DynFlags), OccInfo (OneOcc), setNameLoc, extendInScopeList, runCoreM, freeVars, CoreExprWithFVs, DIdSet, FloatBind, wrapFloats, freeVarsOfAnn, freeVarsOf)
+import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc, floatBindings, FloatOutSwitches (..), uniqAway, MonadUnique (getUniqueSupplyM, getUniqueM), DynFlags (DynFlags), OccInfo (OneOcc), setNameLoc, extendInScopeList, runCoreM, freeVars, CoreExprWithFVs, DIdSet, FloatBind, wrapFloats, freeVarsOfAnn, freeVarsOf, localiseId)
 import GHC.Base ((<|>), Multiplicity)
 import GHC.Data.Maybe (fromJust, liftMaybeT)
 import GHC.Utils.Outputable (Outputable(ppr))
@@ -121,10 +121,10 @@ etaRed :: Expr Var ->  Maybe (Expr Var)
 -- | eta reduction, e.g., \x -> f x => f
 etaRed (Lam v (App f args)) =
    case args of
-      Var v' | not (isTyVar v)
-              ,not (isLinearType (exprType f)) -- we cannot eta-reduce applications with linear type constraints
+      Var v' | --not (isTyVar v)
+              not (isLinearType (exprType f)) -- we cannot eta-reduce applications with linear type constraints
               ,not (ins v f)   -- don't eta reduce if variable used somewhere else in the expression 
-              ,not (isEvVar v) -- don't remove evidence variables 
+              --,not (isEvVar v) -- don't remove evidence variables 
               ,v == v' -> return f 
       _      -> Nothing
 etaRed _ = Nothing
@@ -347,8 +347,8 @@ rewriteBinds fn prog = do
   let ic = hsc_IC env
   let inscopeVars = interactiveInScope ic
       is = mkInScopeSet $ mkUniqSet inscopeVars
-  (prog',is') <- runStateT (recToNonRec is prog) is
-  (prog'',is'') <- runStateT (inlineRec is' prog') is'
+  (prog',is') <- runStateT (inlineRec is prog) is
+  (prog'',is'') <- runStateT (recToNonRec is' prog') is'
   let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars is'')
   let env' = env {hsc_IC = ic'}
   setSession env'
@@ -371,13 +371,15 @@ recToNonRec is (b:bs) = case b of
 inlineRec :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
 inlineRec is [] = return []
 inlineRec is (b:bs) = case b of
-    rr@(Rec ((v,e):ls)) -> (liftIO $ putStrLn "should not have any top level recs left") >>
-                                                    inlineRec is bs >>= \bs' -> return $ rr:bs'
     nr@(NonRec v e) -> do
          if any (insB v) bs then do
                                     let (newBinds, rest) = inline nr bs
                                      in inlineRec is rest >>= \bs' -> return $ newBinds ++ bs'
                             else inlineRec is bs >>= \bs' -> return $ nr:bs'
+    rr@(Rec ((v,e):ls)) -> if any (insB v) bs then do
+                                    let (newBinds, rest) = inline rr bs
+                                     in inlineRec is rest >>= \bs' -> return $ newBinds ++ bs'
+                            else inlineRec is bs >>= \bs' -> return $ rr:bs'
 
 liftTypConstraints :: Expr Var -> Expr Var
 liftTypConstraints (Let (Rec ((b,Lam v e):ls)) ine) | isTyVar v || isEvVar v =
@@ -457,7 +459,19 @@ insertBind n@(NonRec v e) bs = map insertB bs -- inline another nonrec
     where insertB bi@(NonRec b e') = (transformBi $ \case
             (Var v') | v == v' -> e
             e -> e) bi
-insertBind (Rec _) _ = error "All top-level binders should be NonRecs at this point"
+insertBind r bs = insertRec r bs 
+
+
+
+insertRec :: Bind Var -> [Bind Var] -> [Bind Var]
+insertRec (Rec ((v,e):es)) bs = map insertR bs
+    where insertR bind@(NonRec b (Lam x ex)) = NonRec b $ Lam x $
+                                         Let (Rec ((uv,e'):es)) (subst uv v ex)
+          insertR bind@(NonRec b ex) = NonRec b $
+                                         Let (Rec ((uv,e'):es)) (subst uv v ex)
+          uv = setVarType (localiseId v) (varType v)
+          e' = subst uv v e
+
 
 
 floatOut :: CoreProgram -> Ghc CoreProgram

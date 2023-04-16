@@ -46,7 +46,7 @@ import GHC
 import GHC.Paths (libdir)
 import GHC.Data.Bag ()
 
-import GHC.Driver.Session (defaultFatalMessager, defaultFlushOut, gopt_set, optimisationFlags, dopt_set)
+import GHC.Driver.Session (defaultFatalMessager, defaultFlushOut, gopt_set, optimisationFlags, dopt_set, WarningFlag (Opt_WarnUnrecognisedPragmas, Opt_WarnTypedHoles), gopt_unset, wopt_unset)
 import GHC.Driver.Flags ( DumpFlag(..), GeneralFlag (..))
 import GHC.Utils.Outputable ( Outputable(..), showSDocUnsafe)
 import Control.Monad.IO.Class ( MonadIO(liftIO) )
@@ -89,11 +89,11 @@ import GHC.Data.FastString (fsLit, mkFastString)
 import System.FilePath ( replaceDirectory, takeBaseName )
 import Debug.Trace (trace)
 import System.Posix.Internals (puts)
-import Control.Monad (when)
+import Control.Monad (when, unless)
 
 import Similar
 import Instance 
-import Transform (etaReduce, alpha, removeModInfo, repHoles, etaExpP, rewriteBinds, floatOut)
+import Transform (etaReduce, alpha, removeModInfo, repHoles, etaExpP, rewriteBinds, floatOut, replacePatErrorLits)
 import Utils
     ( banner, findLiterals, printHoleLoc, showGhc, ExerciseName, getExerciseName ) 
 import GHC.Core.Opt.Monad (CoreToDo (..), getRuleBase, CoreM, SimplMode (sm_pre_inline))
@@ -156,20 +156,25 @@ simplFlags = [
 genFlags :: [GeneralFlag]
 genFlags = [Opt_DeferTypedHoles
            ,Opt_DoEtaReduction
-           ,Opt_DoLambdaEtaExpansion]
+           ,Opt_DoCoreLinting]
+           --,Opt_DoLambdaEtaExpansion]
 
+warnFlags :: [WarningFlag]
+warnFlags = [Opt_WarnUnrecognisedPragmas
+             ,Opt_WarnTypedHoles]
 
-
-setFlags :: Bool -> [GeneralFlag] -> Ghc DynFlags 
-setFlags b flags = do 
-   dflags <- getSessionDynFlags 
-   let dflags' = EnumSet.delete Opt_KeepOFiles $ EnumSet.delete Opt_KeepHiFiles (generalFlags dflags) 
-   let flags' = if b then EnumSet.toList (generalFlags dflags) ++ flags else flags   
-       dflags'  = dflags {refLevelHoleFits = Just 2,
+setFlags :: Bool -> [GeneralFlag] -> Ghc DynFlags
+setFlags b flags = do
+   dflags <- getSessionDynFlags
+   let dflags' = gopt_unset (gopt_unset dflags Opt_KeepHiFiles) Opt_KeepOFiles
+   let gflags' = if b then EnumSet.toList (generalFlags dflags') ++ flags else flags
+       dflags1  = dflags' {refLevelHoleFits = Just 2,
                           maxValidHoleFits = Just 8,
                           maxRefHoleFits   = Just 15,
-                          generalFlags = EnumSet.fromList flags'} 
-   return dflags'   
+                          generalFlags = EnumSet.fromList gflags'}
+       dflags2 = wopt_unset dflags1 Opt_WarnUnrecognisedPragmas
+       dflags3 = wopt_unset dflags2 Opt_WarnTypedHoles
+   return dflags3 
 
 
 compToFile :: (FilePath -> IO CoreProgram) -> FilePath -> IO ()
@@ -183,7 +188,8 @@ compToFile compile file = do
 typeCheckCore :: CoreProgram -> HscEnv -> IO ()
 -- | Use Core Linter to check for problems
 typeCheckCore coreprog env = do 
-   let coretodo = CoreDoPasses [CoreTidy, CoreDesugar,CoreDesugarOpt] 
+   let coretodo = CoreDoPasses [CoreDoNothing] 
+   unless (gopt Opt_DoCoreLinting (hsc_dflags env)) $ error "CoreLinting flag must be set"
    liftIO $ lintPassResult env coretodo (coreprog)
 
 
@@ -235,11 +241,13 @@ compNorm fp = runGhc (Just libdir) $ do
     (p',e) <- compCoreSt False fp 
     let p = removeModInfo p'   
     (p1,e1) <- appTransf repHoles (p,e)
-    (p2,e2) <- appTransf (etaExpP) (p1,e1) 
-    (p3,e3) <- appTransf (rewriteBinds fname) (p2,e2)
+    --(p2,e2) <- appTransf (etaExpP) (p1,e1) 
+    (p3,e3) <- appTransf (rewriteBinds fname) (p1,e1)
+    --(p2,e2) <- appTransf (etaExpP) (p1,e1) 
+    (p3,e3) <- appTransf (rewriteBinds fname) (p1,e1)
     --(p4,e4) <- appTransf (floatOut) (p3,e3) 
     let
-        p5 = alpha fname p3
+        p5 = (alpha fname . replacePatErrorLits . etaReduce) p3
         prog = p5
         env = e3
     return (prog,env)
