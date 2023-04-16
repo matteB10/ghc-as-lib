@@ -72,7 +72,7 @@ import GHC.Core.Lint (interactiveInScope)
 import GHC.Runtime.Context (extendInteractiveContextWithIds)
 
 
-import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError )
+import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError, getVarFromName )
 import Similar ( Similar((~==)) )
 import Data.Type.Equality (apply)
 import Instance
@@ -94,6 +94,9 @@ import GHC.Platform
 import Control.Lens.Internal.Zoom (Err(getErr))
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 (pack)
+import GHC.Builtin.PrimOps (allThePrimOps, PrimOp, primOpOcc)
+import GHC.Types.Id.Make (mkPrimOpId)
+import GHC.Builtin.Uniques (mkBuiltinUnique)
 
 
 data St = St {
@@ -121,10 +124,10 @@ etaRed :: Expr Var ->  Maybe (Expr Var)
 -- | eta reduction, e.g., \x -> f x => f
 etaRed (Lam v (App f args)) =
    case args of
-      Var v' | --not (isTyVar v)
-              not (isLinearType (exprType f)) -- we cannot eta-reduce applications with linear type constraints
+      Var v' | not (isTyVar v)
+              ,not (isLinearType (exprType f)) -- we cannot eta-reduce applications with linear type constraints
               ,not (ins v f)   -- don't eta reduce if variable used somewhere else in the expression 
-              --,not (isEvVar v) -- don't remove evidence variables 
+              ,not (isEvVar v) -- don't remove evidence variables 
               ,v == v' -> return f 
       _      -> Nothing
 etaRed _ = Nothing
@@ -312,7 +315,7 @@ aRename c@(Case e v t a) = do
                             v' <- renameVar v
                             a' <- renameAlt a
                             return $ Case e' v' t a'
-aRename (Cast e co)    = trace ("DO we ever find coercion " ++ show co) $
+aRename (Cast e co)    = 
                          do
         e' <- aRename e
         return $ Cast e' co
@@ -488,14 +491,70 @@ floatOut p = do
     liftIO $ floatOutwards logger floatSw df us p
 
 
+
+removeRedEqCheck :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
+-- | Remove redundant equality checks
+removeRedEqCheck = rewriteBi remEqCheck
+
+
+m = mkBuiltinUnique
+
+remEqCheck :: Expr Var ->  Maybe (Expr Var)
+-- | remove redundant boolean checks, e.g. 
+-- if x == y then true else false ==> x == y 
+-- f x y | x == y =    True 
+--       | otherwise = False      ==> x == y 
+remEqCheck (Case e v t alt) | isEqCheck e || isNeqCheck e 
+                            , all isBoolToBool alt    = Just e  
+                            | isEqCheck e
+                            , all isNegBoolToBool alt = Just (replace "==" "/=" e)
+                            | isNeqCheck e 
+                            , all isNegBoolToBool alt = Just (replace "/=" "==" e)
+remEqCheck _ = Nothing
+
+
+isEqCheck :: Data Var => Expr Var -> Bool
+isEqCheck e = or [getOccString v == "==" | Var v <- universe e]
+
+isNeqCheck  :: Data Var => Expr Var -> Bool
+isNeqCheck e = or [getOccString v == "/=" | Var v <- universe e]
+
+isBoolToBool :: Alt Var -> Bool 
+isBoolToBool (Alt (DataAlt d) [] (Var v)) = getOccString d == getOccString v  
+isBoolToBool _                            = False 
+
+isNegBoolToBool :: Alt Var -> Bool 
+isNegBoolToBool (Alt (DataAlt d) [] (Var v)) = (getOccString d == "False" && 
+                                               getOccString v == "True") ||
+                                               (getOccString d == "True" && 
+                                               getOccString v == "False")
+isNegBoolToBool _                            = False 
+
+
+getPrimOp :: String -> Maybe PrimOp   
+getPrimOp s = if null ops then Nothing else Just $ head ops 
+    where ops = [ op | op <- allThePrimOps, Occ.occNameString (primOpOcc op) == s]
+
+
+replaceOp :: String -> PrimOp -> CoreExpr -> CoreExpr 
+replaceOp s p = transformBi $ \ex -> case ex :: CoreExpr of 
+    (Var v) | getOccString v == s -> Var (mkPrimOpId p)
+    e -> e 
+
+replace :: String -> String -> CoreExpr -> CoreExpr
+replace old new e = subst vnew vold e 
+    where vold = fromJust $ getVarFromName old e 
+          vnew = setVarName vold (makeName new (getUnique vold) (mkGeneralSrcSpan "Dummy loc")) 
+
+----------------------------------
         -- In reverse dependency order (innermost binder first)
 
 
 --- EXPERIMENTAL STUFF BELOW
 ----------------------------------------------------
 ----------------------------------------------------
-
-{- addDefaultCase :: CoreProgram -> CoreProgram
+{- 
+addDefaultCase :: CoreProgram -> CoreProgram
 addDefaultCase p = evalState (pm p) initSt
     where pm :: CoreProgram -> Ctx CoreProgram
           pm = transformBiM addDefCase
@@ -526,9 +585,6 @@ sub_ v v' = \case
         modify $ \s -> s {env = Map.insert v v' (env s)}
         return (Var v)
     e -> return e
-
-
-
 
 
 
@@ -574,4 +630,4 @@ freshVar t = do
     let name = makeName ("fresh" ++ show j) (mkUnique c i) $ mkGeneralSrcSpan (mkFastString "dummy loc")
     let id = mkLocalVar VanillaId name t t vanillaIdInfo
     modify $ \s -> s {env = Map.insert id id (env s), freshNum = j+1, freshUq=(c,i+1)} -- update map 
-    return id -}
+    return id  -}

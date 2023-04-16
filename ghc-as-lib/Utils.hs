@@ -87,15 +87,15 @@ isHoleVarExpr (Var v) = isHoleVar v
 isHoleVarExpr _ = False 
 
 getTypErr :: Expr Var -> Maybe Var
-getTypErr = getErrVar "typeError" 
+getTypErr = getVarFromName "typeError" 
 
 getPatErr :: Expr Var -> Maybe Var 
-getPatErr = getErrVar "patError"
+getPatErr = getVarFromName "patError"
 
-getErrVar :: String -> Expr Var -> Maybe Var
-getErrVar errstr e | null errv = Nothing 
-                   | otherwise = head errv -- just return first found error variable of specified error 
-    where errv = [Just v | (Var v) <- universe e, getOccString v == errstr]
+getVarFromName :: String -> Expr Var -> Maybe Var
+getVarFromName name e | null vars = Nothing 
+                      | otherwise = head vars -- just return first found variable if any matching  
+    where vars = [Just v | (Var v) <- universe e, getOccString v == name]
 
 {- containsErr :: String -> Expr Var -> Maybe (Expr Var)
 containsErr err = transformBiM $ \ex -> case ex :: Expr Var of 
