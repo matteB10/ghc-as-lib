@@ -93,7 +93,7 @@ import Control.Monad (when)
 
 import Similar
 import Instance 
-import Transform (etaReduce, alpha, removeModInfo, repHoles, normalise, normalise', etaExpP, rewriteBinds, floatOut)
+import Transform (etaReduce, alpha, removeModInfo, repHoles, etaExpP, rewriteBinds, floatOut)
 import Utils
     ( banner, findLiterals, printHoleLoc, showGhc, ExerciseName, getExerciseName ) 
 import GHC.Core.Opt.Monad (CoreToDo (..), getRuleBase, CoreM, SimplMode (sm_pre_inline))
