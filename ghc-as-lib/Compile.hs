@@ -191,7 +191,7 @@ compToFile compile file = do
 typeCheckCore :: CoreProgram -> HscEnv -> IO ()
 -- | Use Core Linter to check for problems
 typeCheckCore coreprog env = do 
-   let coretodo = CoreDoPasses [CoreDoNothing] 
+   let coretodo = CoreDoPasses [CoreDoNothing, CoreTidy] 
    unless (gopt Opt_DoCoreLinting (hsc_dflags env)) $ error "CoreLinting flag must be set"
    liftIO $ lintPassResult env coretodo (coreprog)
 

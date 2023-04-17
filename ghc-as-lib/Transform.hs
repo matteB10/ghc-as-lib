@@ -496,9 +496,6 @@ removeRedEqCheck :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
 -- | Remove redundant equality checks
 removeRedEqCheck = rewriteBi remEqCheck
 
-
-m = mkBuiltinUnique
-
 remEqCheck :: Expr Var ->  Maybe (Expr Var)
 -- | remove redundant boolean checks, e.g. 
 -- if x == y then true else false ==> x == y 
@@ -520,14 +517,19 @@ isNeqCheck  :: Data Var => Expr Var -> Bool
 isNeqCheck e = or [getOccString v == "/=" | Var v <- universe e]
 
 isBoolToBool :: Alt Var -> Bool 
-isBoolToBool (Alt (DataAlt d) [] (Var v)) = getOccString d == getOccString v  
+isBoolToBool (Alt (DataAlt d) [] (Var v)) = dstr == vstr && 
+                                            dstr == "False" || dstr == "True"
+        where dstr = getOccString d 
+              vstr = getOccString v  
 isBoolToBool _                            = False 
 
 isNegBoolToBool :: Alt Var -> Bool 
-isNegBoolToBool (Alt (DataAlt d) [] (Var v)) = (getOccString d == "False" && 
-                                               getOccString v == "True") ||
-                                               (getOccString d == "True" && 
-                                               getOccString v == "False")
+isNegBoolToBool (Alt (DataAlt d) [] (Var v)) = (dstr == "False" && 
+                                                vstr == "True") ||
+                                               (dstr == "True"  && 
+                                                vstr == "False")
+         where dstr = getOccString d 
+               vstr = getOccString v
 isNegBoolToBool _                            = False 
 
 
