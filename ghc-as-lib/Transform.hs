@@ -548,6 +548,21 @@ replace old new e = subst vnew vold e
     where vold = fromJust $ getVarFromName old e 
           vnew = setVarName vold (makeName new (getUnique vold) (mkGeneralSrcSpan "Dummy loc")) 
 
+
+-- Just for testing 
+
+removeEvidence :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
+removeEvidence = rewriteBi removeEv 
+
+
+removeEv :: Expr Var ->  Maybe (Expr Var)
+removeEv (Lam v (App f args)) =
+   case args of
+        Var v' | isEvVar v || isTyVar v -> Just f 
+        _                  -> Nothing 
+removeEv _ = Nothing
+
+
 ----------------------------------
         -- In reverse dependency order (innermost binder first)
 
