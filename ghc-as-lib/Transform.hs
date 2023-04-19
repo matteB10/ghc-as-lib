@@ -39,7 +39,7 @@ import GHC.Core.TyCon (TyCon, mkPrelTyConRepName)
 
 import GHC.Types.SrcLoc ( mkGeneralSrcSpan, srcLocSpan, GenLocated )
 import GHC.Types.Id.Info (IdDetails(VanillaId), vanillaIdInfo, pprIdDetails, setOccInfo, IdInfo, setArityInfo)
-import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc, floatBindings, FloatOutSwitches (..), uniqAway, MonadUnique (getUniqueSupplyM, getUniqueM), DynFlags (DynFlags), OccInfo (OneOcc), setNameLoc, extendInScopeList, runCoreM, freeVars, CoreExprWithFVs, DIdSet, FloatBind, wrapFloats, freeVarsOfAnn, freeVarsOf, localiseId)
+import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc, floatBindings, FloatOutSwitches (..), uniqAway, MonadUnique (getUniqueSupplyM, getUniqueM), DynFlags (DynFlags), OccInfo (OneOcc), setNameLoc, extendInScopeList, runCoreM, freeVars, CoreExprWithFVs, DIdSet, FloatBind, wrapFloats, freeVarsOfAnn, freeVarsOf, localiseId, isConLikeId, isDataConId_maybe)
 import GHC.Base ((<|>), Multiplicity)
 import GHC.Data.Maybe (fromJust, liftMaybeT)
 import GHC.Utils.Outputable (Outputable(ppr))
@@ -87,7 +87,7 @@ import GHC.Core.Opt.FloatOut
 import GHC.Utils.Logger (initLogger)
 import GHC.Types.Unique.Supply (mkSplitUniqSupply)
 import GHC.Core.Type
-import GHC.Types.Id (setIdArity, setIdInfo)
+import GHC.Types.Id (setIdArity, setIdInfo, idDataCon, isDataConId_maybe)
 import GHC.Tc.Utils.Env (topIdLvl)
 import GHC.Core.Opt.FloatIn (floatInwards)
 import GHC.Platform
@@ -97,6 +97,7 @@ import Data.ByteString.Char8 (pack)
 import GHC.Builtin.PrimOps (allThePrimOps, PrimOp, primOpOcc)
 import GHC.Types.Id.Make (mkPrimOpId)
 import GHC.Builtin.Uniques (mkBuiltinUnique)
+import GHC.Iface.Syntax (IfaceDecl(ifIdDetails))
 
 
 data St = St {
@@ -125,12 +126,17 @@ etaRed :: Expr Var ->  Maybe (Expr Var)
 etaRed (Lam v (App f args)) =
    case args of
       Var v' | not (isTyVar v)
-              ,not (isLinearType (exprType f)) -- we cannot eta-reduce applications with linear type constraints
+              ,not (isDataCon f) -- we cannot eta-reduce applications with constructors, since linear in argument
               ,not (ins v f)   -- don't eta reduce if variable used somewhere else in the expression 
               ,not (isEvVar v) -- don't remove evidence variables 
               ,v == v' -> return f 
       _      -> Nothing
 etaRed _ = Nothing
+
+isDataCon :: Expr Var -> Bool
+isDataCon e = not $ null subV 
+    where subV = [ v | (Var v) <- universe e, isJust (isDataConId_maybe v)]
+          
 
 ins :: Data (Bind Var) => Var -> Expr Var -> Bool
 -- | Find if a variable is used somewhere in an expression
@@ -551,7 +557,7 @@ replace old new e = subst vnew vold e
 
 -- Just for testing 
 
-removeEvidence :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
+{- removeEvidence :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
 removeEvidence = rewriteBi removeEv 
 
 
@@ -560,7 +566,14 @@ removeEv (Lam v (App f args)) =
    case args of
         Var v' | isEvVar v || isTyVar v -> Just f 
         _                  -> Nothing 
-removeEv _ = Nothing
+removeEv _ = Nothing -}
+
+removeTyEvidence :: CoreProgram -> CoreProgram 
+removeTyEvidence = transformBi $ \case 
+        (Lam v e)        | isEvVar v || isTyVar v -> e
+        (App f (Var v))  | isEvVar v || isTyVar v -> f  
+        (App f (Type t)) -> f  
+        e -> e 
 
 
 ----------------------------------
