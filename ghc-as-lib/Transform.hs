@@ -60,7 +60,7 @@ import Control.Comonad.Identity (Identity(runIdentity), (<<=))
 import Control.Lens (universeOf, universeOn)
 
 import Data.Generics.Uniplate.Data
-    ( rewriteBi, transformBi, transformBiM, universeBi, rewriteBiM, Biplate, universe )
+    ( rewriteBi, transformBi, transformBiM, universeBi, rewriteBiM, Biplate, universe, childrenBi, children )
 import GHC.Types.Literal (Literal)
 import GHC.Utils.Encoding (utf8DecodeByteString)
 import GHC.Data.Bag (Bag)
@@ -127,8 +127,8 @@ etaRed (Lam v (App f args)) =
    case args of
       Var v' | not (isTyVar v)
               ,not (isDataCon f) -- we cannot eta-reduce applications with constructors, since linear in argument
-              ,not (ins v f)   -- don't eta reduce if variable used somewhere else in the expression 
-              ,not (isEvVar v) -- don't remove evidence variables 
+              ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
+              ,not (isEvVar v)   -- don't remove evidence variables 
               ,v == v' -> return f 
       _      -> Nothing
 etaRed _ = Nothing

@@ -93,7 +93,7 @@ import Control.Monad (when, unless)
 
 import Similar
 import Instance 
-import Transform (etaReduce, alpha, removeModInfo, repHoles, etaExpP, rewriteBinds, floatOut, replacePatErrorLits, removeRedEqCheck, getPrimOp)
+import Transform (etaReduce, alpha, removeModInfo, repHoles, etaExpP, rewriteBinds, floatOut, replacePatErrorLits, removeRedEqCheck, getPrimOp, removeTyEvidence)
 import Utils
     ( banner, findLiterals, printHoleLoc, showGhc, ExerciseName, getExerciseName ) 
 import GHC.Core.Opt.Monad (CoreToDo (..), getRuleBase, CoreM, SimplMode (sm_pre_inline))
@@ -159,7 +159,8 @@ genFlags = [Opt_DeferTypedHoles
            ,Opt_DoCoreLinting
            ,Opt_EnableRewriteRules
            ,Opt_CaseMerge
-           ,Opt_CaseFolding]
+           --,Opt_CaseFolding
+           ]
            --,Opt_DoLambdaEtaExpansion]
 
 warnFlags :: [WarningFlag]
@@ -244,13 +245,14 @@ compNorm fp = runGhc (Just libdir) $ do
     (p',e) <- compCoreSt False fp 
     let p = removeModInfo p'   
     (p1,e1) <- appTransf repHoles (p,e)
-    --(p2,e2) <- appTransf (etaExpP) (p1,e1) 
-    (p3,e3) <- appTransf (rewriteBinds fname) (p1,e1)
+    
+    (p2,e2) <- appTransf (rewriteBinds fname) (p1,e1)
+    (p3,e3) <- appTransf (etaExpP) (p2,e2) 
     --(p4,e4) <- appTransf (floatOut) (p3,e3) 
     let
         p5 = (alpha fname . replacePatErrorLits . etaReduce . removeRedEqCheck) p3
         prog = p5
-        env = e3
+        env = e3 
     return (prog,env)
 
 compFloat :: FilePath -> IO (CoreProgram, HscEnv) 
