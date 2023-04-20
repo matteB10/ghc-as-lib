@@ -38,7 +38,7 @@ import GHC.Types.Unique
 import GHC.Core.TyCon (TyCon, mkPrelTyConRepName)
 
 import GHC.Types.SrcLoc ( mkGeneralSrcSpan, srcLocSpan, GenLocated )
-import GHC.Types.Id.Info (IdDetails(VanillaId), vanillaIdInfo, pprIdDetails, setOccInfo, IdInfo, setArityInfo)
+import GHC.Types.Id.Info (IdDetails(VanillaId), vanillaIdInfo, pprIdDetails, setOccInfo, IdInfo, setArityInfo, arityInfo)
 import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc, floatBindings, FloatOutSwitches (..), uniqAway, MonadUnique (getUniqueSupplyM, getUniqueM), DynFlags (DynFlags), OccInfo (OneOcc), setNameLoc, extendInScopeList, runCoreM, freeVars, CoreExprWithFVs, DIdSet, FloatBind, wrapFloats, freeVarsOfAnn, freeVarsOf, localiseId, isConLikeId, isDataConId_maybe)
 import GHC.Base ((<|>), Multiplicity)
 import GHC.Data.Maybe (fromJust, liftMaybeT)
@@ -126,17 +126,28 @@ etaRed :: Expr Var ->  Maybe (Expr Var)
 etaRed (Lam v (App f args)) =
    case args of
       Var v' | not (isTyVar v)
-              ,not (isDataCon f) -- we cannot eta-reduce applications with constructors, since linear in argument
+              ,not (isDataConApp f) -- we cannot eta-reduce applications with constructors, since linear in argument
               ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
               ,not (isEvVar v)   -- don't remove evidence variables 
               ,v == v' -> return f 
       _      -> Nothing
 etaRed _ = Nothing
 
-isDataCon :: Expr Var -> Bool
-isDataCon e = not $ null subV 
-    where subV = [ v | (Var v) <- universe e, isJust (isDataConId_maybe v)]
-          
+
+isDataConApp :: Expr Var -> Bool
+-- | Check if application includes a dataCon with arity > 0, that would be unsaturated if reduced
+--   hence its checked if its only applied to a type, which cannot saturate a data con
+isDataConApp e = not $ null subV 
+    where subV = [ v | (App (Var v) ex) <- universe e, isJust (isDataConId_maybe v), arityInfo (idInfo v) > 0, isTy ex]
+
+isTy :: Expr Var -> Bool
+isTy (Type _) = True 
+isTy (Var v)  = isTyVar v 
+isTy _        = False 
+
+getDataCons :: Expr Var -> [Expr Var]      
+getDataCons e = [ (Var v) | (Var v) <- universe e, isJust (isDataConId_maybe v), (arityInfo (idInfo v) > 0)]
+
 
 ins :: Data (Bind Var) => Var -> Expr Var -> Bool
 -- | Find if a variable is used somewhere in an expression
@@ -172,7 +183,7 @@ etaExpP p = do
                 b@(NonRec v e) | wantEtaExpB df v e -> NonRec v (eta e df)
                                | otherwise          -> --trace ("arity of " ++ show v `sp` show (arityTypeArity $ findRhsArity df v e (exprArity e)))
                                                        b
-                b -> b
+                b -> b -- why not here? 
           --goE :: DynFlags -> CoreProgram -> CoreProgram
           --goE df = transformBi $ \ex -> case ex :: CoreExpr of
           --  e        | wantEtaExpansion df e  -> eta e df
@@ -349,9 +360,9 @@ getTypErrB (Rec es) = case filter isNothing k of
 
 
 
-rewriteBinds :: String -> CoreProgram -> Ghc CoreProgram
+rewriteBinds :: CoreProgram -> Ghc CoreProgram
 -- | Inline recursive binders as let-recs when appropriate
-rewriteBinds fn prog = do
+rewriteBinds prog = do
   env <- getSession
   let ic = hsc_IC env
   let inscopeVars = interactiveInScope ic

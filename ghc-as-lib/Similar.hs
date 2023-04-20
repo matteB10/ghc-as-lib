@@ -37,7 +37,10 @@ instance Similar (Bind Var) where
     (Rec es) ~== (Rec es') = all (\((b,e),(b',e')) -> b ~== b' && e ~== e') (zip es es')
                                     --and $ concatMap (\(x,x') -> map (\(y,y') -> x ~== y && x' ~== y') es) es'
     (NonRec v e) ~== (NonRec v' e') = v ~== v' && e ~== e'
-    x ~== y                         = False 
+    x ~== y  = case (x,y) of 
+        (NonRec v e,Rec [(v',e')])  -> v ~== v' && e ~== e' 
+        (Rec [(v',e')],NonRec v e)  -> v ~== v' && e ~== e'
+        (_,_)                       -> False 
 
 
 instance Similar (Expr Var) where

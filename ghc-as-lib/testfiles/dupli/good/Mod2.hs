@@ -2,4 +2,4 @@
 module Mod2 where
 
 dupli :: [a] -> [a]
-dupli = _ (replicate 2)
+dupli = concatMap (replicate 2)

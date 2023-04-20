@@ -50,18 +50,18 @@ test m n = do
   normaliseTests n >>= \f -> banner "Expected match with normalisation: "
               >> tf n f
 
-testAll :: (FilePath -> IO CoreProgram) -> IO ()
+testAll :: (ExerciseName -> FilePath -> IO CoreProgram) -> IO ()
 -- | Test and output number of matched tests
 testAll compilefun = do
   exercises <- listDirectory path
   print exercises
-  let f  = uncurry $ compare_ compilefun
+  let f x = uncurry $ compare_ (compilefun x)
   st <- mapM succTests exercises
   ft <- mapM failTests exercises
   nt <- mapM normaliseTests exercises
-  sr <- mapM f (concat st)
-  fr <- mapM f (concat ft)
-  nr <- mapM f (concat nt)
+  sr <- mapM (\(p1,p2) -> f (getN p1) (p1,p2)) (concat st)
+  fr <- mapM (\(p1,p2) -> f (getN p1) (p1,p2)) (concat ft)
+  nr <- mapM (\(p1,p2) -> f (getN p1) (p1,p2)) (concat nt)
   let totsucc = length (concat st)
       totfail = length (concat ft)
       totnorm = length (concat nt)
@@ -73,23 +73,25 @@ testAll compilefun = do
   putStrLn $ showRes norm totnorm "success with normalisation"
   putStrLn $ "total: " ++ showRes (success + fail + norm) (totsucc + totfail + totnorm) "results"
     where showRes res tot expres = show res ++ "/" ++ show tot `sp` "of expected" `sp` expres
+          getN = takeBaseName . takeDirectory . takeDirectory
 
 
 
 testTc :: ExerciseName -> IO ()
 testTc fn = do
     files <- getExFiles fn
-    compiled <- mapM compNorm files
+    compiled <- mapM (compNorm fn) files
     mapM_ tcCore compiled
     putStrLn "All tests typechecked"
 
-testTcAll :: (FilePath -> IO (CoreProgram, HscEnv)) -> IO ()
+testTcAll :: (ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)) -> IO ()
 -- | Core lint (typecheck) core program after applying given function f 
 testTcAll f = do
     files <- getFilePaths path
-    compiled <- mapM f files
+    compiled <- mapM (\x -> f (getN x) x) files
     mapM_ tcCore compiled
     putStrLn $ "All" `sp` show (length compiled) `sp` "tests typechecked"
+    where getN = takeBaseName . takeDirectory . takeDirectory
 
 tcCore :: (CoreProgram, HscEnv) -> IO ()
 tcCore pe = uncurry typeCheckCore pe -- >> putStrLn "Typecheck Ok"
@@ -153,8 +155,8 @@ compare_ comp_pass fp1 fp2 = do
 
 compare_desugar, compare_simpl, compare_norm, compare_float :: (FilePath,FilePath) -> IO Bool
 compare_desugar = uncurry $ compare_ compC
-compare_simpl   = uncurry $ compare_ compS
-compare_norm    = uncurry $ compare_ compN
+compare_simpl (p1,p2) = compare_ (compN (getExerciseName p1)) p1 p2 
+compare_norm (p1,p2) = compare_ (compN (getExerciseName p1)) p1 p2 
 compare_float   = uncurry $ compare_ compF
 
 
@@ -291,9 +293,10 @@ testItem :: TestItem -> IO (Bool,Bool,String)
 --   (False, True) : Unknown in Ask-Elle, success in ghc 
 testItem ti = do
     writeProg ti
-    stProg <- compN "./studentfiles/Temp.hs" -- student progrm
+    let exercisename = (takeBaseName (exerciseid ti))
+    stProg <- compS exercisename "./studentfiles/Temp.hs"  -- student progrm
     modelFiles <- getFilePaths (msPath ++ exerciseid ti)
-    mProgs <- mapM compN modelFiles
+    mProgs <- mapM (compS exercisename) modelFiles
     let b = any (stProg ~==) mProgs
 
     case category ti of
