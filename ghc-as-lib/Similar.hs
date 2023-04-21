@@ -116,8 +116,7 @@ instance Similar DataCon where
         dataConName x == dataConName y 
 
 instance Similar Var where
-    v1 ~== v2 = --trace ("VAR " ++ "v1: " ++ showSDocUnsafe (ppr (varName v1)) ++" v2: " ++ showSDocUnsafe (ppr (varName v2))) 
-        getOccString v1 == getOccString v2 
+    v1 ~== v2 = (isHoleVar v1 || isHoleVar v2) || getOccString v1 == getOccString v2 
 
 instance Similar Type where
     k1 ~== k2 = --trace ("TYPEEQ: " ++ "T1" `sp` (showSDocUnsafe $ ppr k1) `sp` "T2" `sp` (showSDocUnsafe $ ppr k2)) 
