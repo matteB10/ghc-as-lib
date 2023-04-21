@@ -125,11 +125,13 @@ etaRed :: Expr Var ->  Maybe (Expr Var)
 -- | eta reduction, e.g., \x -> f x => f
 etaRed (Lam v (App f args)) =
    case args of
-      Var v' | not (isTyVar v)
-              ,not (isDataConApp f) -- we cannot eta-reduce applications with constructors, since linear in argument
+      Var v' | v == v'
+              ,not (isTyVar v)
+              ,not (isLinearType (exprType f))
+              --,not (isDataConApp f) -- we cannot eta-reduce applications with constructors, since linear in argument
               ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
               ,not (isEvVar v)   -- don't remove evidence variables 
-              ,v == v' -> return f 
+               -> return f 
       _      -> Nothing
 etaRed _ = Nothing
 
@@ -137,8 +139,11 @@ etaRed _ = Nothing
 isDataConApp :: Expr Var -> Bool
 -- | Check if application includes a dataCon with arity > 0, that would be unsaturated if reduced
 --   hence its checked if its only applied to a type, which cannot saturate a data con
-isDataConApp e = not $ null subV 
-    where subV = [ v | (App (Var v) ex) <- universe e, isJust (isDataConId_maybe v), arityInfo (idInfo v) > 0, isTy ex]
+isDataConApp e = case e of 
+        (Var v) | isJust (isDataConId_maybe v), arityInfo (idInfo v) > 0 -> True -- if applying a data con directly
+        _       -> not $ null appcon -- otherwise check if it is only applied to a type 
+    where appcon = [ v | (App (Var v) ex) <- universe e, isJust (isDataConId_maybe v), arityInfo (idInfo v) > 0, isTy ex]
+          
 
 isTy :: Expr Var -> Bool
 isTy (Type _) = True 
@@ -368,11 +373,11 @@ rewriteBinds prog = do
   let inscopeVars = interactiveInScope ic
       is = mkInScopeSet $ mkUniqSet inscopeVars
   (prog',is') <- runStateT (inlineRec is prog) is
-  (prog'',is'') <- runStateT (recToNonRec is' prog') is'
-  let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars is'')
+  --(prog'',is'') <- runStateT (recToNonRec is' prog') is'
+  let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars is')
   let env' = env {hsc_IC = ic'}
   setSession env'
-  return prog''
+  return prog'
 
 
 recToNonRec :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram

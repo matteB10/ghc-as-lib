@@ -155,7 +155,7 @@ compare_ comp_pass fp1 fp2 = do
 
 compare_desugar, compare_simpl, compare_norm, compare_float :: (FilePath,FilePath) -> IO Bool
 compare_desugar = uncurry $ compare_ compC
-compare_simpl (p1,p2) = compare_ (compN (getExerciseName p1)) p1 p2 
+compare_simpl (p1,p2) = compare_ (compS (getExerciseName p1)) p1 p2 
 compare_norm (p1,p2) = compare_ (compN (getExerciseName p1)) p1 p2 
 compare_float   = uncurry $ compare_ compF
 
@@ -249,10 +249,10 @@ decodeJson fp = do
 
 msPath = "./modelsolutions/"
 
-testItems :: FilePath -> IO ()
-testItems jsonfile = do
+testItems :: (ExerciseName -> FilePath -> IO CoreProgram) -> FilePath -> IO ()
+testItems f jsonfile = do
   items <- decodeJson jsonfile
-  results <- mapM testItem items
+  results <- mapM (testItem f) items
   let exps = filter (\(x,y,z) -> (x,y,z)==(True,True,z)) results -- same results as in Ask-Elle 
       expf = filter (\(x,y,z) -> (x,y,z)==(False,False,z)) results
       succ = filter (\(x,y,z) -> (x,y,z)==(False,True,z)) results
@@ -287,16 +287,16 @@ writeProg ti = do
     hFlush handle
     hClose handle
 
-testItem :: TestItem -> IO (Bool,Bool,String)
+testItem :: (ExerciseName -> FilePath -> IO CoreProgram) -> TestItem -> IO (Bool,Bool,String)
 -- | (True,True) : Success in Ask-Elle, Success in ghc 
 --   (False,False) : Unknown in Ask-Eller, Failure in ghc 
 --   (False, True) : Unknown in Ask-Elle, success in ghc 
-testItem ti = do
+testItem f ti = do
     writeProg ti
     let exercisename = (takeBaseName (exerciseid ti))
-    stProg <- compS exercisename "./studentfiles/Temp.hs"  -- student progrm
+    stProg <- f exercisename "./studentfiles/Temp.hs"  -- student progrm
     modelFiles <- getFilePaths (msPath ++ exerciseid ti)
-    mProgs <- mapM (compS exercisename) modelFiles
+    mProgs <- mapM (f exercisename) modelFiles
     let b = any (stProg ~==) mProgs
 
     case category ti of

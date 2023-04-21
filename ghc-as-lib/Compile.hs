@@ -147,23 +147,20 @@ holeFlags =
 simplFlags :: [GeneralFlag]
 -- | Set flags for simplification pass  
 simplFlags = [
-            --Opt_FloatIn
-            --,Opt_LiberateCase
-            --,Opt_CaseFolding
-             Opt_DoLambdaEtaExpansion
-             --,Opt_CaseMerge
+              Opt_FloatIn
+             ,Opt_LiberateCase
+             ,Opt_CaseFolding
+             ,Opt_DoLambdaEtaExpansion
+             ,Opt_CaseMerge
              ,Opt_EnableRewriteRules
+             ,Opt_CaseFolding
              ]
 
 genFlags :: [GeneralFlag]
 genFlags = [Opt_DeferTypedHoles
            ,Opt_DoEtaReduction
            ,Opt_DoCoreLinting
-           --,Opt_EnableRewriteRules
-           --,Opt_CaseMerge
-           --,Opt_CaseFolding
            ]
-           --,Opt_DoLambdaEtaExpansion]
 
 warnFlags :: [WarningFlag]
 warnFlags = [Opt_WarnUnrecognisedPragmas
@@ -227,10 +224,12 @@ compSimpl name fp = runGhc (Just libdir) $ do
   let coremod = coreModule dmod 
       p = removeModInfo (mg_binds coremod)
   (p1,e1) <- appTransf repHoles (p,env)
-  p1' <- liftIO $ core2core e1 (coremod {mg_binds = p1})
+  p1' <- liftIO $ core2core env (coremod {mg_binds = p1})
   let (p2,e2) = (mg_binds p1',e1)
-  let p5 = (alpha name . replacePatErrorLits . etaReduce . removeRedEqCheck) p2
-  return (p5, e2)
+  let p5 = (etaReduce . removeRedEqCheck) p2
+  (p6,e6) <- appTransf rewriteBinds (p5,env)
+  let p7 = (removeTyEvidence . alpha name . replacePatErrorLits) p6 
+  return (p7, e6)
 
 
 compCore :: FilePath -> IO (CoreProgram, HscEnv)
@@ -261,7 +260,7 @@ compNorm fname fp = runGhc (Just libdir) $ do
     (p2,e2) <- appTransf (rewriteBinds) (p1,e1)
     (p3,e3) <- appTransf (etaExpP) (p2,e2) 
     let
-        p5 = (alpha fname . replacePatErrorLits . etaReduce . removeRedEqCheck) p3
+        p5 = (removeTyEvidence . alpha fname . replacePatErrorLits . etaReduce . removeRedEqCheck) p3
         prog = p5
         env = e3
     return (prog,env)
@@ -296,6 +295,14 @@ compS :: ExerciseName -> FilePath -> IO CoreProgram
 compS fname fp = do 
   (p,_) <- compSimpl fname fp 
   return p
+
+compPureS :: ExerciseName -> FilePath -> IO CoreProgram 
+compPureS _ fp = runGhc (Just libdir) $ do 
+  env <- getSession
+  dflags <- setFlags True (holeFlags ++ genFlags ++ simplFlags)
+  setSessionDynFlags dflags 
+  mod <- compileToCoreSimplified fp
+  return (cm_binds mod)
 
 -- Functions to compile wiht plugins 
 compWithPlugins :: FilePath -> IO CoreProgram 
