@@ -72,7 +72,7 @@ import GHC.Core.Lint (interactiveInScope)
 import GHC.Runtime.Context (extendInteractiveContextWithIds)
 
 
-import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError, getVarFromName )
+import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError, getVarFromName, isEvOrTyVar, isEvOrTyExp )
 import Similar ( Similar((~==)) )
 import Data.Type.Equality (apply)
 import Instance
@@ -98,6 +98,7 @@ import GHC.Builtin.PrimOps (allThePrimOps, PrimOp, primOpOcc)
 import GHC.Types.Id.Make (mkPrimOpId)
 import GHC.Builtin.Uniques (mkBuiltinUnique)
 import GHC.Iface.Syntax (IfaceDecl(ifIdDetails))
+import GHC.Types.Unique.Set (emptyUniqSet)
 
 
 data St = St {
@@ -112,7 +113,7 @@ type Ctx a = State St a
 -- \eta -> let f = ... in f eta 
 removeModInfo :: CoreProgram -> CoreProgram
 removeModInfo = concatMap removeModInf
-    where removeModInf :: Bind Var -> [Bind Var]
+    where removeModInf :: CoreBind -> [CoreBind]
           removeModInf (NonRec v e) | isVarMod v = []
           removeModInf b                         = [b]
 
@@ -121,7 +122,7 @@ etaReduce :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
 etaReduce = rewriteBi etaRed
 
 
-etaRed :: Expr Var ->  Maybe (Expr Var)
+etaRed :: CoreExpr ->  Maybe (CoreExpr)
 -- | eta reduction, e.g., \x -> f x => f
 etaRed (Lam v (App f args)) =
    case args of
@@ -136,7 +137,7 @@ etaRed (Lam v (App f args)) =
 etaRed _ = Nothing
 
 
-isDataConApp :: Expr Var -> Bool
+isDataConApp :: CoreExpr -> Bool
 -- | Check if application includes a dataCon with arity > 0, that would be unsaturated if reduced
 --   hence its checked if its only applied to a type, which cannot saturate a data con
 isDataConApp e = case e of 
@@ -145,16 +146,16 @@ isDataConApp e = case e of
     where appcon = [ v | (App (Var v) ex) <- universe e, isJust (isDataConId_maybe v), arityInfo (idInfo v) > 0, isTy ex]
           
 
-isTy :: Expr Var -> Bool
+isTy :: CoreExpr -> Bool
 isTy (Type _) = True 
 isTy (Var v)  = isTyVar v 
 isTy _        = False 
 
-getDataCons :: Expr Var -> [Expr Var]      
+getDataCons :: CoreExpr -> [CoreExpr]      
 getDataCons e = [ (Var v) | (Var v) <- universe e, isJust (isDataConId_maybe v), (arityInfo (idInfo v) > 0)]
 
 
-ins :: Data (Bind Var) => Var -> Expr Var -> Bool
+ins :: Data (CoreBind) => Var -> CoreExpr -> Bool
 -- | Find if a variable is used somewhere in an expression
 ins v e = or [v==v' | v' <- universeBi e :: [Var]]
 
@@ -286,7 +287,7 @@ alpha fname cs = evalState st (initSt {exerName = fname})
 
     -- tried uniplate but missed a lot of instances 
 
-alphaR :: Bind Var -> Ctx (Bind Var)
+alphaR :: CoreBind -> Ctx (CoreBind)
 alphaR (NonRec v e) = do
         v' <- renameVar v
         NonRec v' <$> aRename e
@@ -320,7 +321,7 @@ renameV v = do
     return v'
 
 
-aRename :: Expr Var -> Ctx (Expr Var)
+aRename :: CoreExpr -> Ctx CoreExpr
 aRename v@(Var id)     = Var <$> renameVar id
 aRename t@(Type _)     = return t
 aRename l@(Lit _)      = return l
@@ -365,18 +366,30 @@ getTypErrB (Rec es) = case filter isNothing k of
 
 
 
-rewriteBinds :: CoreProgram -> Ghc CoreProgram
--- | Inline recursive binders as let-recs when appropriate
-rewriteBinds prog = do
+inlineBinds :: CoreProgram -> Ghc CoreProgram
+-- | Inline recursive binders as let-recs, and non recursive binders directly
+inlineBinds prog = do
   env <- getSession
+  dflags <- getSessionDynFlags
   let ic = hsc_IC env
-  let inscopeVars = interactiveInScope ic
+      inscopeVars = interactiveInScope ic
       is = mkInScopeSet $ mkUniqSet inscopeVars
-  (prog',is') <- runStateT (inlineRec is prog) is
-  --(prog'',is'') <- runStateT (recToNonRec is' prog') is'
+  (prog',is') <- runStateT (inlineBind is prog) is
   let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars is')
   let env' = env {hsc_IC = ic'}
-  setSession env'
+  return prog'
+
+recToLetRec :: CoreProgram -> Ghc CoreProgram
+-- | Inline recursive binders as let-recs when appropriate
+recToLetRec prog = do
+  env <- getSession
+  dflags <- getSessionDynFlags
+  let ic = hsc_IC env
+      inscopeVars = interactiveInScope ic
+      is = mkInScopeSet $ mkUniqSet inscopeVars
+  (prog',is') <- runStateT (recToNonRec is prog) is
+  let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars is')
+  let env' = env {hsc_IC = ic'}
   return prog'
 
 
@@ -385,31 +398,25 @@ recToNonRec :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
 recToNonRec _ [] = return []
 recToNonRec is (b:bs) = case b of
     rr@(Rec ((v,e):ls)) -> do -- RECS WITH MORE ITEMS NOT HANDLED
-                    fresh <- freshGhcVar v
+                    fresh <- freshGhcVar v 
                     let e' = subst fresh v e
                         is' = extendInScopeSet is fresh
                         b' = NonRec v $ (Let (Rec ((fresh,e'):ls)) (Var fresh))
-                    put is'
                     recToNonRec is bs >>= \bs' -> return $ b':bs'
     nr@(NonRec v e) -> recToNonRec is bs >>= \bs' -> return $ nr : bs'
 
-inlineRec :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
-inlineRec is [] = return []
-inlineRec is (b:bs) = case b of
+inlineBind :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
+inlineBind is [] = return []
+inlineBind is (b:bs) = case b of
     nr@(NonRec v e) -> do
          if any (insB v) bs then do
                                     let (newBinds, rest) = inline nr bs
-                                     in inlineRec is rest >>= \bs' -> return $ newBinds ++ bs'
-                            else inlineRec is bs >>= \bs' -> return $ nr:bs'
+                                     in inlineBind is rest >>= \bs' -> return $ newBinds ++ bs'
+                            else inlineBind is bs >>= \bs' -> return $ nr:bs'
     rr@(Rec ((v,e):ls)) -> if any (insB v) bs then do
                                     let (newBinds, rest) = inline rr bs
-                                     in inlineRec is rest >>= \bs' -> return $ newBinds ++ bs'
-                            else inlineRec is bs >>= \bs' -> return $ rr:bs'
-
-liftTypConstraints :: Expr Var -> Expr Var
-liftTypConstraints (Let (Rec ((b,Lam v e):ls)) ine) | isTyVar v || isEvVar v =
-                             Lam v (liftTypConstraints ((Let (Rec ((b,e):ls)) ine)))
-liftTypConstraints e = e
+                                     in inlineBind is rest >>= \bs' -> return $ newBinds ++ bs'
+                            else inlineBind is bs >>= \bs' -> return $ rr:bs'
 
 
 freshGhcVar :: Var -> StateT InScopeSet Ghc Id
@@ -417,11 +424,8 @@ freshGhcVar id = do
     is <- get
     let uq = unsafeGetFreshLocalUnique is
         name = makeName "fresh" uq (mkGeneralSrcSpan (mkFastString "Dummy location"))
-        --ft   = dropForAlls $ snd $ splitForAllInvisTVBinders (varType id)
         id'  = setIdNotExported $ makeLocal $ setVarName id name -- reuse id information from top-level binder
-        id'' = topIdLvl
-        is'  = extendInScopeSet is id'
-    --put is'
+    put $ extendInScopeSet is id' 
     return id'
 
 subst :: Var -> Var -> CoreExpr -> CoreExpr
@@ -434,28 +438,26 @@ sub v v' = \case
     (Var id) | id == v' -> (Var v)
     e -> e
 
-insB :: Data (Bind Var) => Var -> Bind Var -> Bool
+insB :: Data CoreBind => Var -> CoreBind -> Bool
 -- | Find if a variable is used somewhere in a binder
 insB n b = or [v==n | v <- universeBi b :: [Var]]
 
 
-inline :: Bind Var -> [Bind Var] -> ([Bind Var],[Bind Var])
+inline :: CoreBind -> [CoreBind] -> ([CoreBind],[CoreBind])
 -- | Inline a binder and return remaining binders 
 inline b bs = let ls  = getBinds bs (getBindTopVar b) -- get all binders using the binder we want to inline 
-                  b'  = setBindTopVar (makeLocal (getBindTopVar b)) b -- change scope to local of binder variable if inlined 
+                  b'  = updateVar (makeLocal (getBindTopVar b)) b -- change scope to local of binder variable if inlined 
                   bs' = insertBind b ls
                   in (bs', delete b (bs \\ ls))
 
 makeLocal :: Var -> Var
 makeLocal v | isId v = mkLocalId (varName v) (varMult v) (varType v)
-            -- | isId v  && isGlobalId v = mkLocalId (varName v) (varMult v) (varType v)
-            -- | isId v                  = v
-            -- | otherwise = v
 
 
-setBindTopVar :: Var -> Bind Var -> Bind Var
-setBindTopVar v = transformBi $ \e -> case e :: CoreExpr of
-        (Var v') | v == v' -> Var v
+updateVar :: Var -> CoreBind -> CoreBind
+-- | update variable information 
+updateVar v = transformBi $ \e -> case e :: CoreExpr of
+        (Var v') | v ~== v' -> Var v
         e       -> e
 
 getBindTopVar :: CoreBind -> Var
@@ -469,27 +471,23 @@ getBinds :: [CoreBind] -> Var -> [CoreBind]
 getBinds binds v = [r | r <- binds, v `insB` r]
 
 
-bindNames :: Bind Var -> [Name]
+bindNames :: CoreBind -> [Name]
 -- | Return all names used in a binder 
 bindNames = \case
     Rec ((v,e):es) -> varName v:bindNamesE e
     NonRec v e     -> varName v:bindNamesE e
-    where bindNamesE :: Expr Var -> [Name]
+    where bindNamesE :: CoreExpr -> [Name]
           bindNamesE e = concat [bindNames n | Let n e' <- universeBi e]
 
 
-insertBind :: Bind Var -> [Bind Var] -> [Bind Var]
+insertBind :: CoreBind -> [CoreBind] -> [CoreBind]
 -- | Inline binder in all binders using it 
+--  recursive binders are inlined as a let-rec
 insertBind n@(NonRec v e) bs = map insertB bs -- inline another nonrec 
     where insertB bi@(NonRec b e') = (transformBi $ \case
             (Var v') | v == v' -> e
             e -> e) bi
-insertBind r bs = insertRec r bs 
-
-
-
-insertRec :: Bind Var -> [Bind Var] -> [Bind Var]
-insertRec (Rec ((v,e):es)) bs = map insertR bs
+insertBind (Rec ((v,e):es)) bs = map insertR bs 
     where insertR bind@(NonRec b (Lam x ex)) = NonRec b $ Lam x $
                                          Let (Rec ((uv,e'):es)) (subst uv v ex)
           insertR bind@(NonRec b ex) = NonRec b $
@@ -500,6 +498,7 @@ insertRec (Rec ((v,e):es)) bs = map insertR bs
 
 
 floatOut :: CoreProgram -> Ghc CoreProgram
+-- | Using the float out transformation from GHC
 floatOut p = do
     df <- getSessionDynFlags
     logger <- liftIO initLogger
@@ -518,7 +517,7 @@ removeRedEqCheck :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
 -- | Remove redundant equality checks
 removeRedEqCheck = rewriteBi remEqCheck
 
-remEqCheck :: Expr Var ->  Maybe (Expr Var)
+remEqCheck :: CoreExpr ->  Maybe CoreExpr
 -- | remove redundant boolean checks, e.g. 
 -- if x == y then true else false ==> x == y 
 -- f x y | x == y =    True 
@@ -532,13 +531,14 @@ remEqCheck (Case e v t alt) | isEqCheck e || isNeqCheck e
 remEqCheck _ = Nothing
 
 
-isEqCheck :: Data Var => Expr Var -> Bool
+isEqCheck :: Data Var => CoreExpr -> Bool
 isEqCheck e = or [getOccString v == "==" | Var v <- universe e]
 
-isNeqCheck  :: Data Var => Expr Var -> Bool
+isNeqCheck  :: Data Var => CoreExpr -> Bool
 isNeqCheck e = or [getOccString v == "/=" | Var v <- universe e]
 
 isBoolToBool :: Alt Var -> Bool 
+-- | Case on a bool that also returns a bool
 isBoolToBool (Alt (DataAlt d) [] (Var v)) = dstr == vstr && 
                                             dstr == "False" || dstr == "True"
         where dstr = getOccString d 
@@ -546,6 +546,7 @@ isBoolToBool (Alt (DataAlt d) [] (Var v)) = dstr == vstr &&
 isBoolToBool _                            = False 
 
 isNegBoolToBool :: Alt Var -> Bool 
+-- | Case on a bool that also returns a bool, but with reversed logic
 isNegBoolToBool (Alt (DataAlt d) [] (Var v)) = (dstr == "False" && 
                                                 vstr == "True") ||
                                                (dstr == "True"  && 
@@ -555,125 +556,34 @@ isNegBoolToBool (Alt (DataAlt d) [] (Var v)) = (dstr == "False" &&
 isNegBoolToBool _                            = False 
 
 
-getPrimOp :: String -> Maybe PrimOp   
-getPrimOp s = if null ops then Nothing else Just $ head ops 
-    where ops = [ op | op <- allThePrimOps, Occ.occNameString (primOpOcc op) == s]
-
-
-replaceOp :: String -> PrimOp -> CoreExpr -> CoreExpr 
-replaceOp s p = transformBi $ \ex -> case ex :: CoreExpr of 
-    (Var v) | getOccString v == s -> Var (mkPrimOpId p)
-    e -> e 
-
 replace :: String -> String -> CoreExpr -> CoreExpr
+-- | Replace the variable name with another name, and 
+--   update all occurences of the variable in the given expression
 replace old new e = subst vnew vold e 
     where vold = fromJust $ getVarFromName old e 
           vnew = setVarName vold (makeName new (getUnique vold) (mkGeneralSrcSpan "Dummy loc")) 
 
 
--- Just for testing 
-
-{- removeEvidence :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
-removeEvidence = rewriteBi removeEv 
-
-
-removeEv :: Expr Var ->  Maybe (Expr Var)
-removeEv (Lam v (App f args)) =
-   case args of
-        Var v' | isEvVar v || isTyVar v -> Just f 
-        _                  -> Nothing 
-removeEv _ = Nothing -}
-
 removeTyEvidence :: CoreProgram -> CoreProgram 
+-- | Remove types and type evidence from a Coreprogram
 removeTyEvidence = transformBi $ \case 
         (Lam v e)        | isEvVar v || isTyVar v -> e
         (App f (Var v))  | isEvVar v || isTyVar v -> f  
         (App f (Type t)) -> f  
+        (Let b e) | isEvBind b -> e 
         e -> e 
+    where isEvBind (NonRec bi e) = isEvOrTyVar bi && isEvOrTyExp e 
+          isEvBind (Rec es) = all (isEvOrTyVar . fst) es && all (isEvOrTyExp . snd) es 
 
+floatOutLets :: CoreProgram -> CoreProgram 
+-- | Float let-binders to toplevel, e.g. f = let g = x in g => x 
+floatOutLets = transformBi $ \bind -> case bind :: CoreBind of  
+     (NonRec v (Lam a (Let b (App (Var v') (Var a'))))) | getBindTopVar b ~== v' 
+                                                        , a ~== a' -> transformBi (subst v v') (setBindTopVar v b) 
+     (NonRec v (Let b (Var v'))) | getBindTopVar b == v' -> transformBi (subst v v') (setBindTopVar v b) 
+     
+     bi -> bi   
 
-----------------------------------
-        -- In reverse dependency order (innermost binder first)
-
-
---- EXPERIMENTAL STUFF BELOW
-----------------------------------------------------
-----------------------------------------------------
-{- 
-addDefaultCase :: CoreProgram -> CoreProgram
-addDefaultCase p = evalState (pm p) initSt
-    where pm :: CoreProgram -> Ctx CoreProgram
-          pm = transformBiM addDefCase
-
-addDefCase :: Expr Var -> Ctx (Expr Var)
-addDefCase ex@(Lam v e) | isTyVar v                     = Lam v <$> addDefCase e
-                        | needsCaseBinding (varType v) e = addCase e v -- rather tests whether
-                                                                           -- needs to use a case rather than let bind
-addDefCase e = return e
-
-
-addCase :: Expr Var -> Var -> Ctx (Expr Var)
-addCase e v = do
-    let t = varType v
-    fresh <- freshVar t
-    wild <- freshVar t  -- should have same type as the case 
-    e' <- subst_ fresh v e
-    return $ Lam fresh $ mkDefaultCase (Var fresh) wild e'
-
-subst_ :: Var -> Var -> CoreExpr -> Ctx CoreExpr
-subst_ v v' = --trace ("found subst" ++ show "["++ show v' ++ "->" ++ show v ++"]" ) $
-             transformBiM (sub_ v v')
-
-sub_ :: Var -> Var -> CoreExpr -> Ctx CoreExpr
--- | Replace all occurences of the second variable with the first one in the given expr
-sub_ v v' = \case
-    (Var id) | id == v' -> do
-        modify $ \s -> s {env = Map.insert v v' (env s)}
-        return (Var v)
-    e -> return e
-
-
-
-
--- Core Utils 
--- mkSingleAltCase
--- needsCaseBInding
--- bindNonRec
--- mkAltExpr -- make case alternatives 
--- | Extract the default case alternative
--- findDefault :: [Alt b] -> ([Alt b], Maybe (Expr b))
--- -- | Find the case alternative corresponding to a particular
--- constructor: panics if no such constructor exists
--- findAlt :: AltCon -> [Alt b] -> Maybe (Alt b)
-
--- check if we can use diffBinds from Core.Utils to find small diffs 
--- diffExpr instead of my similarity relation? need an RnEnv2
-
--- mkLamTypes :: [Var] -> Type -> Type
--- can this be used for beta-expansioN???????
-
--- applyTypeToArgs :: HasDebugCallStack => SDoc -> Type -> [CoreExpr] -> Type
--- ^ Determines the type resulting from applying an expression with given type
---- to given argument expressions.
--- Do I need to do this backwards when eta-reducing?
-
-caseToGuard :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
-caseToGuard = rewriteBi etaRed
-
-
-ctg :: Expr Var ->  Maybe (Expr Var)
--- | case to guard, e.g. case e of {Just a -> a} => case (e == Just a) of {True -> a}
-ctg (Lam v (App f args)) =
-   case args of
-      Var v' | v == v' -> return f
-      _                -> Nothing
-ctg _ = Nothing
-
-freshVar :: Type -> Ctx Id
-freshVar t = do
-    (c,i) <- gets freshUq
-    j <- gets freshNum
-    let name = makeName ("fresh" ++ show j) (mkUnique c i) $ mkGeneralSrcSpan (mkFastString "dummy loc")
-    let id = mkLocalVar VanillaId name t t vanillaIdInfo
-    modify $ \s -> s {env = Map.insert id id (env s), freshNum = j+1, freshUq=(c,i+1)} -- update map 
-    return id  -}
+setBindTopVar :: Var -> CoreBind -> CoreBind 
+setBindTopVar new (NonRec v e)     = NonRec new e 
+setBindTopVar new (Rec ((v,e):es)) = Rec ((new,e):es) 

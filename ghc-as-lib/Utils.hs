@@ -17,7 +17,7 @@ import GHC.Plugins
       fsLit,
       showPpr,
       getOccString,
-      tyVarKind, showSDoc, showSDocUnsafe ) 
+      tyVarKind, showSDoc, showSDocUnsafe, isTyVar ) 
 import GHC.Core.TyCo.Rep
     ( TyLit(StrTyLit),
       Type(TyConApp, LitTy, AppTy, FunTy, CastTy, ft_af, ft_arg, ft_res,
@@ -34,6 +34,8 @@ import Instance
 import GHC.Utils.Outputable
 import Language.Haskell.TH.Lib (conT)
 import GHC.RTS.Flags (getParFlags)
+import GHC.Core (CoreExpr)
+import GHC.Core.Predicate (isEvVar)
 
 type ExerciseName = String 
 
@@ -85,6 +87,14 @@ isHoleVar v = take 4 (getOccString v) == "hole"
 isHoleVarExpr :: Expr Var -> Bool
 isHoleVarExpr (Var v) = isHoleVar v 
 isHoleVarExpr _ = False 
+
+isEvOrTyVar :: Var -> Bool 
+isEvOrTyVar v = isTyVar v || isEvVar v 
+
+isEvOrTyExp :: CoreExpr -> Bool 
+isEvOrTyExp e = case e of   
+    (Var v) -> isEvOrTyVar v 
+    _       -> False 
 
 getTypErr :: Expr Var -> Maybe Var
 getTypErr = getVarFromName "typeError" 
