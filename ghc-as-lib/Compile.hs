@@ -146,13 +146,13 @@ holeFlags =
 simplFlags :: [GeneralFlag]
 -- | Set flags for simplification pass  
 simplFlags = [
-              Opt_LiberateCase
-             ,Opt_CaseFolding
-             ,Opt_DoLambdaEtaExpansion
-             ,Opt_Specialise
-             ,Opt_CaseMerge
-             ,Opt_EnableRewriteRules
-             ,Opt_CaseFolding
+            --  Opt_LiberateCase
+            -- ,Opt_CaseFolding
+            -- ,Opt_DoLambdaEtaExpansion
+            -- ,Opt_Specialise
+            -- ,Opt_CaseMerge
+               Opt_EnableRewriteRules
+            -- ,Opt_CaseFolding
              ]
 
 genFlags :: [GeneralFlag]
@@ -227,7 +227,7 @@ compSimpl name fp = runGhc (Just libdir) $ do
   p2 <- liftIO $ core2core env (coremod {mg_binds = p1})
   let p3 = (etaReduce . removeRedEqCheck) (mg_binds p2) 
   p4 <- inlineBinds p3 
-  let p5 = (alpha name . replacePatErrorLits) p4
+  let p5 = (alpha name . floatOutLets . replacePatErrorLits) p4
       prog = removeTyEvidence p5
   env <- getSession 
   return (prog, env)
@@ -262,7 +262,7 @@ compNorm fname fp = runGhc (Just libdir) $ do
     (p3,e3) <- appTransf (recToLetRec) (p2,e2)
     (p4,e4) <- appTransf (etaExpP) (p3,e3)
     let
-        p5 = (alpha fname . etaReduce . removeRedEqCheck) p4 
+        p5 = (alpha fname . floatOutLets . etaReduce . removeRedEqCheck) p4 
         prog = removeTyEvidence 
                p5
         env = e2

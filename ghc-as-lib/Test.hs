@@ -55,13 +55,13 @@ testAll :: (ExerciseName -> FilePath -> IO CoreProgram) -> IO ()
 testAll compilefun = do
   exercises <- listDirectory path
   print exercises
-  let f x = uncurry $ compare_ (compilefun x) 
+  let f n expectation = uncurry $ compare_pr (compilefun n) expectation
   st <- mapM succTests exercises
   ft <- mapM failTests exercises
   nt <- mapM normaliseTests exercises
-  sr <- mapM (\(p1,p2) -> f (getN p1) (p1,p2)) (concat st)
-  fr <- mapM (\(p1,p2) -> f (getN p1) (p1,p2)) (concat ft)
-  nr <- mapM (\(p1,p2) -> f (getN p1) (p1,p2)) (concat nt)
+  sr <- mapM (\(p1,p2) -> f (getN p1) True (p1,p2)) (concat st)
+  fr <- mapM (\(p1,p2) -> f (getN p1) False (p1,p2)) (concat ft)
+  nr <- mapM (\(p1,p2) -> f (getN p1) True (p1,p2)) (concat nt)
   let totsucc = length (concat st)
       totfail = length (concat ft)
       totnorm = length (concat nt)
@@ -71,7 +71,7 @@ testAll compilefun = do
   putStrLn $ showRes success totsucc "success"
   putStrLn $ showRes fail totfail "fail"
   putStrLn $ showRes norm totnorm "success with normalisation"
-  putStrLn $ "total: " ++ showRes (success + norm) (totsucc + totnorm) "results"
+  putStrLn $ "total: " ++ showRes (success + norm + fail) (totsucc + totnorm + totfail) "results"
     where showRes res tot expres = show res ++ "/" ++ show tot `sp` "of expected" `sp` expres
           getN = takeBaseName . takeDirectory . takeDirectory
 
@@ -120,33 +120,20 @@ testPrA n ps = do
   putStr "programs match" >> mapM compare_norm ps >>= print
 
 
-comparePrint :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO ()
-comparePrint compile fp1 fp2 = do
-  p1 <- readFile fp1
-  p2 <- readFile fp2
-  cp1' <- compile fp1
-  let cp1 = removeModInfo cp1'
-  cp2' <- compile fp2
-  let cp2 = removeModInfo cp2'
-  banner "student prog source:"
-  putStrLn p1
-  printHoleLoc cp1
-  banner "model prog source: "
-  putStrLn p2
-  printHoleLoc cp2
-  putStrLn "student prog compiled:"
-  print cp1
-  putStrLn "model prog compiled:"
-  print cp2
-  putStrLn $ "Programs match: " ++ show (cp1 ~== cp2)
+compare_pr :: (FilePath -> IO CoreProgram) -> Bool -> FilePath -> FilePath -> IO Bool 
+compare_pr compile b fp1 fp2 = do 
+  cp1 <- compile fp1
+  cp2 <- compile fp2
+  let res = cp1 ~== cp2
+  when (not res && b) $ print $ "failed: " ++ fp1 
+  return res 
+  
 
 compare_ :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO Bool
 compare_ comp_pass fp1 fp2 = do
   cp1 <- comp_pass fp1
   cp2 <- comp_pass fp2
-  let res = cp1 ~== cp2
-  unless res $ print $ "failed: " ++ fp1 
-  return res 
+  return $ cp1 ~== cp2 
 
 
 compare_desugar, compare_simpl, compare_norm, compare_float :: (FilePath,FilePath) -> IO Bool

@@ -105,6 +105,9 @@ instance Similar Type where
 instance Eq (Bind Var) where 
     (==) = (~==)
 
+instance Eq (Expr Var) where 
+    (==) = (~==)
+
 {- we need checks for e.g  xs == reverse xs ~== reverse xs == xs 
 however, pattern matching like below does not scale well at all. 
 Need a clever approach. 
