@@ -9,11 +9,10 @@
 
 module Transform where
 
-import GHC (HsExpr (..), Name, Ghc, HscEnv, GhcMonad (..), isPrimTyCon, getSessionDynFlags, DynFlags (targetPlatform), isLocalId, SrcSpan)
-import GHC.Core ( Expr(..), CoreExpr, CoreBndr, Bind(..), CoreProgram, Alt (..), valArgCount, CoreBind, AltCon (..), isRuntimeArg, AnnExpr' (..))
+import GHC (Name, Ghc, HscEnv, GhcMonad (..), getSessionDynFlags, isLocalId, SrcSpan)
+import GHC.Core ( Expr(..), CoreExpr, CoreBndr, Bind(..), CoreProgram, Alt (..), valArgCount, CoreBind, AltCon (..))
 import GHC.Types.Name ( mkOccName, getOccString, mkInternalName, isDataConName, isSystemName, getSrcSpan)
 import qualified GHC.Types.Name.Occurrence as Occ
---import qualified GHC.Types.Var as Var
 import GHC.Types.Var
     ( Var(..),
       isTyVar,
@@ -32,7 +31,6 @@ import GHC.Types.Var
       isLocalVar,
       setVarType, isTyVarBinder, setIdNotExported, mkExportedLocalVar, globaliseId, setVarName )
 import GHC.Core.TyCo.Rep (Type(..), Kind, CoercionR, TyLit (StrTyLit), AnonArgFlag (VisArg))
-import GHC.Core.Type (eqType, isPiTy, dropForAlls, isForAllTy_co, isForAllTy_ty, splitForAllTyCoVarBinders, splitForAllInvisTVBinders)
 import GHC.Data.FastString (fsLit, mkFastString)
 import GHC.Types.Unique
 import GHC.Core.TyCon (TyCon, mkPrelTyConRepName)
@@ -40,7 +38,6 @@ import GHC.Core.TyCon (TyCon, mkPrelTyConRepName)
 import GHC.Types.SrcLoc ( mkGeneralSrcSpan, srcLocSpan, GenLocated )
 import GHC.Types.Id.Info (IdDetails(VanillaId), vanillaIdInfo, pprIdDetails, setOccInfo, IdInfo, setArityInfo, arityInfo)
 import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc, floatBindings, FloatOutSwitches (..), uniqAway, MonadUnique (getUniqueSupplyM, getUniqueM), DynFlags (DynFlags), OccInfo (OneOcc), setNameLoc, extendInScopeList, runCoreM, freeVars, CoreExprWithFVs, DIdSet, FloatBind, wrapFloats, freeVarsOfAnn, freeVarsOf, localiseId, isConLikeId, isDataConId_maybe)
-import GHC.Base ((<|>), Multiplicity)
 import GHC.Data.Maybe (fromJust, liftMaybeT)
 import GHC.Utils.Outputable (Outputable(ppr))
 import GHC.Iface.Ext.Types (pprIdentifier)
@@ -50,55 +47,38 @@ import GHC.Core.Utils (exprType, exprIsExpandable, isExpandableApp)
 import qualified Data.Text as T
 import Control.Monad.Trans.State
 import Data.Data (Data)
-import Control.Monad (when, (>=>))
+import Control.Monad (when)
 import Data.Maybe (isNothing, isJust)
 import Debug.Trace ( trace )
 import qualified Data.Map as Map
 import Data.Map (Map(..), insert, lookup)
 import Data.List (intersect, delete, (\\))
-import Control.Comonad.Identity (Identity(runIdentity), (<<=))
-import Control.Lens (universeOf, universeOn)
 
 import Data.Generics.Uniplate.Data
     ( rewriteBi, transformBi, transformBiM, universeBi, rewriteBiM, Biplate, universe, childrenBi, children )
 import GHC.Types.Literal (Literal)
 import GHC.Utils.Encoding (utf8DecodeByteString)
-import GHC.Data.Bag (Bag)
-import GHC.Parser.Annotation (SrcSpanAnnA)
-import GHC.Hs (GhcTc, XUnboundVar)
-import GHC.Hs.Binds (HsBindLR)
 import GHC.Tc.Types.Evidence (HoleExprRef(..))
 import GHC.Core.Lint (interactiveInScope)
 import GHC.Runtime.Context (extendInteractiveContextWithIds)
 
 
-import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError, getVarFromName, isEvOrTyVar, isEvOrTyExp )
+import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError, getVarFromName, isEvOrTyVar, isEvOrTyExp, isTy, ins, insB, subst )
 import Similar ( Similar((~==)) )
 import Data.Type.Equality (apply)
-import Instance
+import Instance ( BiplateFor )
 import qualified Data.Map as M
-import Data.Generics.Uniplate (transform)
 import GHC.Driver.Monad (modifySession)
 import GHC.Core.Opt.Arity (etaExpandAT, exprArity, etaExpand, exprEtaExpandArity, arityTypeArity, findRhsArity)
-import GHC.Core.Opt.Simplify.Utils (tryEtaExpandRhs)
-import GHC.Types.Tickish (tickishCounts)
 import GHC.Core.Predicate (isEvVar)
-import GHC.Core.Opt.FloatOut
+import GHC.Core.Opt.FloatOut ( floatOutwards )
 import GHC.Utils.Logger (initLogger)
 import GHC.Types.Unique.Supply (mkSplitUniqSupply)
-import GHC.Core.Type
+import GHC.Core.Type ( Type, Var(..), isLinearType, isTyVar )
 import GHC.Types.Id (setIdArity, setIdInfo, idDataCon, isDataConId_maybe)
-import GHC.Tc.Utils.Env (topIdLvl)
-import GHC.Core.Opt.FloatIn (floatInwards)
-import GHC.Platform
-import Control.Lens.Internal.Zoom (Err(getErr))
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 (pack)
-import GHC.Builtin.PrimOps (allThePrimOps, PrimOp, primOpOcc)
-import GHC.Types.Id.Make (mkPrimOpId)
 import GHC.Builtin.Uniques (mkBuiltinUnique)
-import GHC.Iface.Syntax (IfaceDecl(ifIdDetails))
-import GHC.Types.Unique.Set (emptyUniqSet)
 
 
 data St = St {
@@ -106,7 +86,6 @@ data St = St {
         ,freshNum  :: Int
         ,exerName  :: String
         }
-
 
 type Ctx a = State St a
 
@@ -122,42 +101,28 @@ etaReduce :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
 etaReduce = rewriteBi etaRed
 
 
-etaRed :: CoreExpr ->  Maybe (CoreExpr)
+etaRed :: CoreExpr ->  Maybe CoreExpr
 -- | eta reduction, e.g., \x -> f x => f
 etaRed (Lam v (App f args)) =
    case args of
       Var v' | v == v'
               ,not (isTyVar v)
-              ,not (isLinearType (exprType f))
-              --,not (isDataConApp f) -- we cannot eta-reduce applications with constructors, since linear in argument
+              ,not (isLinearType (exprType f)) -- don't eta-reduce eta-expanded data constructors (with linear types)
               ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
               ,not (isEvVar v)   -- don't remove evidence variables 
-               -> return f 
+               -> return f
       _      -> Nothing
 etaRed _ = Nothing
 
 
 isDataConApp :: CoreExpr -> Bool
--- | Check if application includes a dataCon with arity > 0, that would be unsaturated if reduced
---   hence its checked if its only applied to a type, which cannot saturate a data con
-isDataConApp e = case e of 
+-- | Check if application includes a dataCon with arity > 0, only works when type information removed. 
+isDataConApp e = case e of
         (Var v) | isJust (isDataConId_maybe v), arityInfo (idInfo v) > 0 -> True -- if applying a data con directly
-        _       -> not $ null appcon -- otherwise check if it is only applied to a type 
-    where appcon = [ v | (App (Var v) ex) <- universe e, isJust (isDataConId_maybe v), arityInfo (idInfo v) > 0, isTy ex]
-          
+        _      -> False
+    --    _       -> not $ null appcon -- otherwise check if it is only applied to a type 
+    --where appcon = [ v | (App (Var v) ex) <- universe e, isJust (isDataConId_maybe v), arityInfo (idInfo v) > 0, isTy ex]
 
-isTy :: CoreExpr -> Bool
-isTy (Type _) = True 
-isTy (Var v)  = isTyVar v 
-isTy _        = False 
-
-getDataCons :: CoreExpr -> [CoreExpr]      
-getDataCons e = [ (Var v) | (Var v) <- universe e, isJust (isDataConId_maybe v), (arityInfo (idInfo v) > 0)]
-
-
-ins :: Data (CoreBind) => Var -> CoreExpr -> Bool
--- | Find if a variable is used somewhere in an expression
-ins v e = or [v==v' | v' <- universeBi e :: [Var]]
 
 makeName :: String -> Unique -> SrcSpan -> Name
 -- | Create a name from a string and a variable
@@ -189,11 +154,7 @@ etaExpP p = do
                 b@(NonRec v e) | wantEtaExpB df v e -> NonRec v (eta e df)
                                | otherwise          -> --trace ("arity of " ++ show v `sp` show (arityTypeArity $ findRhsArity df v e (exprArity e)))
                                                        b
-                b -> b -- why not here? 
-          --goE :: DynFlags -> CoreProgram -> CoreProgram
-          --goE df = transformBi $ \ex -> case ex :: CoreExpr of
-          --  e        | wantEtaExpansion df e  -> eta e df
-          --           | otherwise -> e
+                b -> b 
 --
           eta expr df = let arit = exprEtaExpandArity df expr
                         in etaExpandAT arit expr
@@ -221,13 +182,9 @@ wantEtaExpB :: DynFlags -> Var -> CoreExpr -> Bool
 wantEtaExpB df v e = id_arity > 0
     where id_arity = arityTypeArity $ findRhsArity df v e ex_arity
           ex_arity = exprArity e
-            --arityTypeArity $ exprEtaExpandArity df e
-
-
--- ========= REPLACE HOLES =======
--- made monadic 
 
 repHoles :: CoreProgram -> Ghc CoreProgram
+-- | Replace holes with variables 
 repHoles prog = do
   env <- getSession
   let ic = hsc_IC env
@@ -235,7 +192,7 @@ repHoles prog = do
   (prog',inscopeVars') <- replaceHoles (mkInScopeSet $ mkUniqSet inscopeVars) prog
   let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars inscopeVars')
   let env' = env {hsc_IC = ic'}
-  --modifySession $ const env'
+  modifySession $ const env'
   return prog'
         where replaceHoles :: InScopeSet -> CoreProgram -> Ghc (CoreProgram,InScopeSet)
               -- | Replace expressions representing holes with hole variables of the same type 
@@ -259,7 +216,7 @@ replacePatErrorLits = transformBi $ \case
     c@(Case e v t alt) | isPatError c -> Case (rlit e) v t alt
                        | otherwise -> c
     e -> e
-    where rlit = transformBi $ \ex -> case ex :: CoreExpr of 
+    where rlit = transformBi $ \ex -> case ex :: CoreExpr of
             (Lit (LitString s)) -> Lit (LitString (stripModInfo s))
             e -> e
 
@@ -267,27 +224,26 @@ stripModInfo :: ByteString -> ByteString
 -- | Replace pattern error message with location info to dummy string 
 stripModInfo s = pack "pattern error"
     -- if wanting location info later 
-    --pack $ dropWhile (/= ':') (utf8DecodeByteString s) -- keeping location info for now, maybe remove later
+    --pack $ dropWhile (/= ':') (utf8DecodeByteString s) -- keeping location info
 
 
 
 initSt :: St
-initSt = St {env = Map.empty, freshNum = 0, exerName = " "}
+initSt = St {env = Map.empty, freshNum = 0, exerName = ""}
 
 alphaWCtxt :: String -> CoreProgram -> (CoreProgram, Map.Map Var Var)
 -- | Do renaming and return map of renamed variables        
-alphaWCtxt fname cs = (evalState st (initSt {exerName = fname}), map)
-    where st@(StateT f) = mapM alphaR cs
-          map = env $ execState st (initSt {exerName = fname})
+alphaWCtxt fname cs = (prog, env state)
+    where (prog,state) = runState st (initSt {exerName = fname})
+          st = mapM alphaR cs
 
 alpha :: String -> CoreProgram -> CoreProgram
 -- | Do renaming and return map of renamed variables        
 alpha fname cs = evalState st (initSt {exerName = fname})
     where st = mapM alphaR cs
+ 
 
-    -- tried uniplate but missed a lot of instances 
-
-alphaR :: CoreBind -> Ctx (CoreBind)
+alphaR :: CoreBind -> Ctx CoreBind
 alphaR (NonRec v e) = do
         v' <- renameVar v
         NonRec v' <$> aRename e
@@ -338,7 +294,7 @@ aRename c@(Case e v t a) = do
                             v' <- renameVar v
                             a' <- renameAlt a
                             return $ Case e' v' t a'
-aRename (Cast e co)    = 
+aRename (Cast e co)    =
                          do
         e' <- aRename e
         return $ Cast e' co
@@ -357,13 +313,6 @@ renameAlt = mapM renameAlt'
             e' <- aRename e
             return $ Alt ac vs' e'
 
-getTypErrB :: CoreBind -> Maybe Id
-getTypErrB (NonRec _ e) = getTypErr e
-getTypErrB (Rec es) = case filter isNothing k of
-                    [] -> Nothing
-                    l  -> Just (fromJust $ head l)
-        where k = map (getTypErr . snd) es
-
 
 
 inlineBinds :: CoreProgram -> Ghc CoreProgram
@@ -378,6 +327,27 @@ inlineBinds prog = do
   let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars is')
   let env' = env {hsc_IC = ic'}
   return prog'
+
+inlineBind :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
+inlineBind is [] = return []
+inlineBind is (b:bs) = case b of
+    nr@(NonRec v e) -> do
+         if any (insB v) bs then do
+                                    let (newBinds, rest) = inline nr bs
+                                     in inlineBind is rest >>= \bs' -> return $ newBinds ++ bs'
+                            else inlineBind is bs >>= \bs' -> return $ nr:bs'
+    rr@(Rec ((v,e):ls)) -> if any (insB v) bs then do
+                                    let (newBinds, rest) = inline rr bs
+                                     in inlineBind is rest >>= \bs' -> return $ newBinds ++ bs'
+                            else inlineBind is bs >>= \bs' -> return $ rr:bs'
+
+
+inline :: CoreBind -> [CoreBind] -> ([CoreBind],[CoreBind])
+-- | Inline a binder and return remaining binders 
+inline b bs = let ls  = getBinds bs (getBindTopVar b) -- get all binders using the binder we want to inline 
+                  b'  = updateVar (makeLocal (getBindTopVar b)) b -- change scope to local of binder variable if inlined 
+                  bs' = insertBind b ls
+                  in (bs', delete b (bs \\ ls))
 
 recToLetRec :: CoreProgram -> Ghc CoreProgram
 -- | Inline recursive binders as let-recs when appropriate
@@ -398,25 +368,13 @@ recToNonRec :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
 recToNonRec _ [] = return []
 recToNonRec is (b:bs) = case b of
     rr@(Rec ((v,e):ls)) -> do -- RECS WITH MORE ITEMS NOT HANDLED
-                    fresh <- freshGhcVar v 
+                    fresh <- freshGhcVar v
                     let e' = subst fresh v e
                         is' = extendInScopeSet is fresh
                         b' = NonRec v $ (Let (Rec ((fresh,e'):ls)) (Var fresh))
                     recToNonRec is bs >>= \bs' -> return $ b':bs'
     nr@(NonRec v e) -> recToNonRec is bs >>= \bs' -> return $ nr : bs'
 
-inlineBind :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
-inlineBind is [] = return []
-inlineBind is (b:bs) = case b of
-    nr@(NonRec v e) -> do
-         if any (insB v) bs then do
-                                    let (newBinds, rest) = inline nr bs
-                                     in inlineBind is rest >>= \bs' -> return $ newBinds ++ bs'
-                            else inlineBind is bs >>= \bs' -> return $ nr:bs'
-    rr@(Rec ((v,e):ls)) -> if any (insB v) bs then do
-                                    let (newBinds, rest) = inline rr bs
-                                     in inlineBind is rest >>= \bs' -> return $ newBinds ++ bs'
-                            else inlineBind is bs >>= \bs' -> return $ rr:bs'
 
 
 freshGhcVar :: Var -> StateT InScopeSet Ghc Id
@@ -425,30 +383,8 @@ freshGhcVar id = do
     let uq = unsafeGetFreshLocalUnique is
         name = makeName "fresh" uq (mkGeneralSrcSpan (mkFastString "Dummy location"))
         id'  = setIdNotExported $ makeLocal $ setVarName id name -- reuse id information from top-level binder
-    put $ extendInScopeSet is id' 
+    put $ extendInScopeSet is id'
     return id'
-
-subst :: Var -> Var -> CoreExpr -> CoreExpr
-subst v v' = --trace ("found subst" ++ show "["++ show v' ++ "->" ++ show v ++"]" ) $
-             transformBi (sub v v')
-
-sub :: Var -> Var -> CoreExpr -> CoreExpr
--- | Replace the second variable with the first one given
-sub v v' = \case
-    (Var id) | id == v' -> (Var v)
-    e -> e
-
-insB :: Data CoreBind => Var -> CoreBind -> Bool
--- | Find if a variable is used somewhere in a binder
-insB n b = or [v==n | v <- universeBi b :: [Var]]
-
-
-inline :: CoreBind -> [CoreBind] -> ([CoreBind],[CoreBind])
--- | Inline a binder and return remaining binders 
-inline b bs = let ls  = getBinds bs (getBindTopVar b) -- get all binders using the binder we want to inline 
-                  b'  = updateVar (makeLocal (getBindTopVar b)) b -- change scope to local of binder variable if inlined 
-                  bs' = insertBind b ls
-                  in (bs', delete b (bs \\ ls))
 
 makeLocal :: Var -> Var
 makeLocal v | isId v = mkLocalId (varName v) (varMult v) (varType v)
@@ -487,7 +423,7 @@ insertBind n@(NonRec v e) bs = map insertB bs -- inline another nonrec
     where insertB bi@(NonRec b e') = (transformBi $ \case
             (Var v') | v == v' -> e
             e -> e) bi
-insertBind (Rec ((v,e):es)) bs = map insertR bs 
+insertBind (Rec ((v,e):es)) bs = map insertR bs
     where insertR bind@(NonRec b (Lam x ex)) = NonRec b $ Lam x $
                                          Let (Rec ((uv,e'):es)) (subst uv v ex)
           insertR bind@(NonRec b ex) = NonRec b $
@@ -506,7 +442,7 @@ floatOut p = do
             floatOutLambdas = Just 1,    -- float all lambdas to top level,
             floatOutConstants = False,    -- True => float constants to top level,
             floatOutOverSatApps = False,   -- True => float out over-saturated application
-            floatToTopLevelOnly = False    -- Allow floating to the top level only.
+            floatToTopLevelOnly = True    -- Allow floating to the top level only.
             }
     us <- liftIO $ mkSplitUniqSupply 'z'
     liftIO $ floatOutwards logger floatSw df us p
@@ -522,11 +458,11 @@ remEqCheck :: CoreExpr ->  Maybe CoreExpr
 -- if x == y then true else false ==> x == y 
 -- f x y | x == y =    True 
 --       | otherwise = False      ==> x == y 
-remEqCheck (Case e v t alt) | isEqCheck e || isNeqCheck e 
-                            , all isBoolToBool alt    = Just e  
+remEqCheck (Case e v t alt) | isEqCheck e || isNeqCheck e
+                            , all isBoolToBool alt    = Just e
                             | isEqCheck e
                             , all isNegBoolToBool alt = Just (replace "==" "/=" e)
-                            | isNeqCheck e 
+                            | isNeqCheck e
                             , all isNegBoolToBool alt = Just (replace "/=" "==" e)
 remEqCheck _ = Nothing
 
@@ -537,53 +473,57 @@ isEqCheck e = or [getOccString v == "==" | Var v <- universe e]
 isNeqCheck  :: Data Var => CoreExpr -> Bool
 isNeqCheck e = or [getOccString v == "/=" | Var v <- universe e]
 
-isBoolToBool :: Alt Var -> Bool 
+isBoolToBool :: Alt Var -> Bool
 -- | Case on a bool that also returns a bool
-isBoolToBool (Alt (DataAlt d) [] (Var v)) = dstr == vstr && 
+isBoolToBool (Alt (DataAlt d) [] (Var v)) = dstr == vstr &&
                                             dstr == "False" || dstr == "True"
-        where dstr = getOccString d 
-              vstr = getOccString v  
-isBoolToBool _                            = False 
+        where dstr = getOccString d
+              vstr = getOccString v
+isBoolToBool _                            = False
 
-isNegBoolToBool :: Alt Var -> Bool 
+isNegBoolToBool :: Alt Var -> Bool
 -- | Case on a bool that also returns a bool, but with reversed logic
-isNegBoolToBool (Alt (DataAlt d) [] (Var v)) = (dstr == "False" && 
+isNegBoolToBool (Alt (DataAlt d) [] (Var v)) = (dstr == "False" &&
                                                 vstr == "True") ||
-                                               (dstr == "True"  && 
+                                               (dstr == "True"  &&
                                                 vstr == "False")
-         where dstr = getOccString d 
+         where dstr = getOccString d
                vstr = getOccString v
-isNegBoolToBool _                            = False 
+isNegBoolToBool _                            = False
 
 
 replace :: String -> String -> CoreExpr -> CoreExpr
 -- | Replace the variable name with another name, and 
 --   update all occurences of the variable in the given expression
-replace old new e = subst vnew vold e 
-    where vold = fromJust $ getVarFromName old e 
-          vnew = setVarName vold (makeName new (getUnique vold) (mkGeneralSrcSpan "Dummy loc")) 
+replace old new e = subst vnew vold e
+    where vold = fromJust $ getVarFromName old e
+          vnew = setVarName vold (makeName new (getUnique vold) (mkGeneralSrcSpan "Dummy loc"))
 
 
-removeTyEvidence :: CoreProgram -> CoreProgram 
+removeTyEvidence :: CoreProgram -> CoreProgram
 -- | Remove types and type evidence from a Coreprogram
-removeTyEvidence = transformBi $ \case 
+removeTyEvidence = transformBi $ \case
         (Lam v e)        | isEvVar v || isTyVar v -> e
-        (App f (Var v))  | isEvVar v || isTyVar v -> f  
-        (App f (Type t)) -> f  
-        (Let b e) | isEvBind b -> e 
-        e -> e 
-    where isEvBind (NonRec bi e) = isEvOrTyVar bi && isEvOrTyExp e 
-          isEvBind (Rec es) = all (isEvOrTyVar . fst) es && all (isEvOrTyExp . snd) es 
+        (App f (Var v))  | isEvVar v || isTyVar v -> f
+        (App f (Type t)) -> f
+        (Let b e) | isEvBind b -> e
+        e -> e
+    where isEvBind (NonRec bi e) = isEvOrTyVar bi && isEvOrTyExp e
+          isEvBind (Rec es) = all (isEvOrTyVar . fst) es && all (isEvOrTyExp . snd) es
 
-floatOutLets :: CoreProgram -> CoreProgram 
+
+
+-- Experimental 
+
+floatOutLets :: CoreProgram -> CoreProgram
 -- | Float let-binders to toplevel, e.g. f = let g = x in g => x 
-floatOutLets = transformBi $ \bind -> case bind :: CoreBind of  
-     (NonRec v (Lam a (Let b (App (Var v') (Var a'))))) | getBindTopVar b ~== v' 
-                                                        , a ~== a' -> transformBi (subst v v') (setBindTopVar v b) 
-     (NonRec v (Let b (Var v'))) | getBindTopVar b == v' -> transformBi (subst v v') (setBindTopVar v b) 
-     
-     bi -> bi   
+floatOutLets = transformBi $ \bind -> case bind :: CoreBind of
+     (NonRec v (Lam a (Let b (App (Var v') (Var a'))))) | getBindTopVar b ~== v'
+                                                        , a ~== a' -> transformBi (subst v v') (setBindTopVar v b)
+     (NonRec v (Let b (Var v'))) | getBindTopVar b == v' -> transformBi (subst v v') (setBindTopVar v b)
 
-setBindTopVar :: Var -> CoreBind -> CoreBind 
-setBindTopVar new (NonRec v e)     = NonRec new e 
-setBindTopVar new (Rec ((v,e):es)) = Rec ((new,e):es) 
+     bi -> bi
+
+setBindTopVar :: Var -> CoreBind -> CoreBind
+setBindTopVar new (NonRec v e)     = NonRec new e
+setBindTopVar new (Rec ((v,e):es)) = Rec ((new,e):es)

@@ -28,7 +28,7 @@ import System.IO.Temp
 import Data.Aeson
 import qualified Data.ByteString.Lazy as B
 import GHC.Generics
-import Control.Monad (when)
+import Control.Monad (when, unless)
 
 
 data Mode = DEBUG -- print which pair of files compared, and the result 
@@ -55,7 +55,7 @@ testAll :: (ExerciseName -> FilePath -> IO CoreProgram) -> IO ()
 testAll compilefun = do
   exercises <- listDirectory path
   print exercises
-  let f x = uncurry $ compare_ (compilefun x)
+  let f x = uncurry $ compare_ (compilefun x) 
   st <- mapM succTests exercises
   ft <- mapM failTests exercises
   nt <- mapM normaliseTests exercises
@@ -71,16 +71,16 @@ testAll compilefun = do
   putStrLn $ showRes success totsucc "success"
   putStrLn $ showRes fail totfail "fail"
   putStrLn $ showRes norm totnorm "success with normalisation"
-  putStrLn $ "total: " ++ showRes (success + fail + norm) (totsucc + totfail + totnorm) "results"
+  putStrLn $ "total: " ++ showRes (success + norm) (totsucc + totnorm) "results"
     where showRes res tot expres = show res ++ "/" ++ show tot `sp` "of expected" `sp` expres
           getN = takeBaseName . takeDirectory . takeDirectory
 
 
 
-testTc :: ExerciseName -> IO ()
-testTc fn = do
-    files <- getExFiles fn
-    compiled <- mapM (compNorm fn) files
+testTc :: FilePath -> (ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)) -> IO ()
+testTc fp f = do
+    files <- getFilePaths fp
+    compiled <- mapM (f "") files
     mapM_ tcCore compiled
     putStrLn "All tests typechecked"
 
@@ -94,7 +94,7 @@ testTcAll f = do
     where getN = takeBaseName . takeDirectory . takeDirectory
 
 tcCore :: (CoreProgram, HscEnv) -> IO ()
-tcCore pe = uncurry typeCheckCore pe -- >> putStrLn "Typecheck Ok"
+tcCore = uncurry typeCheckCore
 
 testPr :: ExerciseName -> [(FilePath,FilePath)] -> IO ()
 -- | Test and print test by test 
@@ -108,8 +108,6 @@ testPr n (t:ts) = testPr' n t >> testPr n ts
           putStr "programs match: " >> compare_simpl ps >>= print
           putStrLn  "Manual transformations:"
           putStr "programs match: " >> compare_norm ps >>= print
-          --putStrLn "Float transformations"
-          --putStr "programs match" >> compare_float ps >>= print
 
 testPrA :: ExerciseName -> [(FilePath,FilePath)] -> IO ()
 -- | Test and print all  
@@ -120,8 +118,6 @@ testPrA n ps = do
   putStr "programs match" >> mapM compare_simpl ps >>= print
   putStrLn  "Manual transformations:"
   putStr "programs match" >> mapM compare_norm ps >>= print
-  --putStrLn "Float transformations"
-  --putStr "programs match" >> mapM compare_float ps >>= print
 
 
 comparePrint :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO ()
@@ -146,11 +142,11 @@ comparePrint compile fp1 fp2 = do
 
 compare_ :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO Bool
 compare_ comp_pass fp1 fp2 = do
-  cp1' <- comp_pass fp1
-  let cp1 = removeModInfo cp1'
-  cp2' <- comp_pass fp2
-  let cp2 = removeModInfo cp2'
-  return (cp1 ~== cp2)
+  cp1 <- comp_pass fp1
+  cp2 <- comp_pass fp2
+  let res = cp1 ~== cp2
+  unless res $ print $ "failed: " ++ fp1 
+  return res 
 
 
 compare_desugar, compare_simpl, compare_norm, compare_float :: (FilePath,FilePath) -> IO Bool
@@ -159,12 +155,6 @@ compare_simpl (p1,p2) = compare_ (compS (getExerciseName p1)) p1 p2
 compare_norm (p1,p2) = compare_ (compN (getExerciseName p1)) p1 p2 
 compare_float   = uncurry $ compare_ compF
 
-
--- different transformations
-
-compEtaExp fp = ghcToIO $ do
-        (p,e) <- compCoreSt False fp
-        appTransf repHoles (p,e) >>= appTransf etaExpP
 
 
 matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
@@ -201,9 +191,6 @@ getFilePaths folderPath = do
 
 isFile :: FilePath -> Bool
 isFile path = not (null (takeExtension path))
-
-
-getAllFiles = getFilePaths path
 
 path = "./testfiles/"
 
@@ -259,7 +246,7 @@ testItems f jsonfile = do
       fail = filter (\(x,y,z) -> (x,y,z)==(True,False,z)) results
       nboftest = f items
       f = show . length
-  putStrLn "printing expectef fail attempts:"
+  putStrLn "printing expected failed attempts:"
   mapM_ (\(_,_,prog) -> printProg prog) expf 
   putStrLn "printing failed attempts:"
   mapM_ (\(_,_,prog) -> printProg prog) fail
@@ -268,6 +255,24 @@ testItems f jsonfile = do
   putStrLn $ f succ ++ "/" ++ nboftest ++ " could now be matched"
   putStrLn $ f fail ++ "/" ++ nboftest ++ " expected to match, but failed"
  
+testItem :: (ExerciseName -> FilePath -> IO CoreProgram) -> TestItem -> IO (Bool,Bool,String)
+-- | (True,True) : Success in Ask-Elle, Success in ghc 
+--   (False,False) : Unknown in Ask-Elle, Failure in ghc 
+--   (False, True) : Unknown in Ask-Elle, success in ghc 
+testItem f ti = do
+    writeProg ti
+    let exercisename = takeBaseName (exerciseid ti)
+    stProg <- f exercisename "./studentfiles/Temp.hs"  -- student progrm
+    modelFiles <- getFilePaths (msPath ++ exerciseid ti)
+    mProgs <- mapM (f exercisename) modelFiles
+    let b = any (stProg ~==) mProgs
+
+    case category ti of
+        "Complete"   -> return (True,b,input ti)  -- program completed
+        "OnTrack"    -> return (True,b,input ti)  -- recognised as on track
+        "Missing"    -> return (False,b,input ti) -- missing cases (not defined on all input)
+        "TestPassed" -> return (False,b,input ti) -- quickcheck tests passed, but could not be matched 
+        "Unknown"    -> return (False,b,input ti) -- unknown
 
 
 
@@ -287,21 +292,3 @@ writeProg ti = do
     hFlush handle
     hClose handle
 
-testItem :: (ExerciseName -> FilePath -> IO CoreProgram) -> TestItem -> IO (Bool,Bool,String)
--- | (True,True) : Success in Ask-Elle, Success in ghc 
---   (False,False) : Unknown in Ask-Eller, Failure in ghc 
---   (False, True) : Unknown in Ask-Elle, success in ghc 
-testItem f ti = do
-    writeProg ti
-    let exercisename = (takeBaseName (exerciseid ti))
-    stProg <- f exercisename "./studentfiles/Temp.hs"  -- student progrm
-    modelFiles <- getFilePaths (msPath ++ exerciseid ti)
-    mProgs <- mapM (f exercisename) modelFiles
-    let b = any (stProg ~==) mProgs
-
-    case category ti of
-        "Complete"   -> return (True,b,input ti)  -- program completed
-        "OnTrack"    -> return (True,b,input ti)  -- recognised as on track
-        "Missing"    -> return (False,b,input ti) -- missing cases (not defined on all input)
-        "TestPassed" -> return (False,b,input ti) -- quickcheck tests passed, but could not be matched 
-        "Unknown"    -> return (False,b,input ti) -- unknown

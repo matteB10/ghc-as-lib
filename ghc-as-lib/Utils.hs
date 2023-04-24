@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Utils where 
 
 
@@ -25,7 +26,7 @@ import GHC.Core.TyCo.Rep
 import GHC.Utils.Encoding (utf8DecodeByteString)
 
 -- General imports 
-import Data.Maybe ( isNothing )
+import Data.Maybe ( isNothing, fromJust )
 import Data.Generics.Uniplate.Data  
 import Control.Monad (when)
 
@@ -34,8 +35,9 @@ import Instance
 import GHC.Utils.Outputable
 import Language.Haskell.TH.Lib (conT)
 import GHC.RTS.Flags (getParFlags)
-import GHC.Core (CoreExpr)
+import GHC.Core (CoreExpr, CoreBind)
 import GHC.Core.Predicate (isEvVar)
+import Data.Data ( Data )
 
 type ExerciseName = String 
 
@@ -68,13 +70,13 @@ varNameUnique :: Var -> String
 varNameUnique = showSDocUnsafe . ppr 
 
 
-isHoleExpr :: Expr Var -> Bool
+isHoleExpr :: CoreExpr-> Bool
 isHoleExpr (Case e _ t _) = case getTypErr e of 
                                 Just pe -> True 
                                 _ -> False 
 isHoleExpr _              = False
 
-isPatError :: Expr Var -> Bool 
+isPatError :: CoreExpr-> Bool 
 isPatError (Case e _ t _) = case getPatErr e of 
                                 Just pe -> True 
                                 _ -> False 
@@ -84,7 +86,7 @@ isPatError _              = False
 isHoleVar :: Var -> Bool
 isHoleVar v = take 4 (getOccString v) == "hole"
 
-isHoleVarExpr :: Expr Var -> Bool
+isHoleVarExpr :: CoreExpr-> Bool
 isHoleVarExpr (Var v) = isHoleVar v 
 isHoleVarExpr _ = False 
 
@@ -96,13 +98,45 @@ isEvOrTyExp e = case e of
     (Var v) -> isEvOrTyVar v 
     _       -> False 
 
-getTypErr :: Expr Var -> Maybe Var
+isTy :: CoreExpr -> Bool
+isTy (Type _) = True 
+isTy (Var v)  = isTyVar v 
+isTy _        = False 
+
+ins :: Data (Bind Var) => Var -> CoreExpr -> Bool
+-- | Find if a variable is used somewhere in an expression
+ins v e = or [v==v' | v' <- universeBi e :: [Var]]
+
+insB :: Data (Bind Var) => Var -> CoreBind -> Bool
+-- | Find if a variable is used somewhere in a binder
+insB n b = or [v==n | v <- universeBi b :: [Var]]
+
+subst :: Var -> Var -> CoreExpr -> CoreExpr
+subst v v' = --trace ("found subst" ++ show "["++ show v' ++ "->" ++ show v ++"]" ) $
+             transformBi (sub v v')
+
+sub :: Var -> Var -> CoreExpr -> CoreExpr
+-- | Replace the second variable with the first one given
+sub v v' = \case
+    (Var id) | id == v' -> (Var v)
+    e -> e
+
+
+getTypErr :: CoreExpr-> Maybe Var
 getTypErr = getVarFromName "typeError" 
 
-getPatErr :: Expr Var -> Maybe Var 
+getPatErr :: CoreExpr-> Maybe Var 
 getPatErr = getVarFromName "patError"
 
-getVarFromName :: String -> Expr Var -> Maybe Var
+getTypErrB :: CoreBind -> Maybe Var
+getTypErrB (NonRec _ e) = getTypErr e
+getTypErrB (Rec es) = case filter isNothing errs of
+                    [] -> Nothing
+                    l  -> Just (fromJust $ head l)
+        where errs = map (getTypErr . snd) es
+
+
+getVarFromName :: String -> CoreExpr-> Maybe Var
 getVarFromName name e | null vars = Nothing 
                       | otherwise = head vars -- just return first found variable if any matching  
     where vars = [Just v | (Var v) <- universe e, getOccString v == name]
@@ -124,7 +158,7 @@ containsTErr err (Cast e co)    = containsTErr err e
 containsTErr _ _              = [Nothing] -}
 
 
-isVar :: Expr Var -> Bool
+isVar :: CoreExpr-> Bool
 isVar (Var _) = True
 isVar _       = False
 
