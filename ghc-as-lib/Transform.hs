@@ -64,7 +64,7 @@ import GHC.Runtime.Context (extendInteractiveContextWithIds)
 
 
 import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError, getVarFromName, isEvOrTyVar, isEvOrTyExp, isTy, ins, insB, subst )
-import Similar ( Similar((~==)) )
+import Similar ( Similar((~=)) )
 import Data.Type.Equality (apply)
 import Instance ( BiplateFor )
 import qualified Data.Map as M
@@ -393,7 +393,7 @@ makeLocal v | isId v = mkLocalId (varName v) (varMult v) (varType v)
 updateVar :: Var -> CoreBind -> CoreBind
 -- | update variable information 
 updateVar v = transformBi $ \e -> case e :: CoreExpr of
-        (Var v') | v ~== v' -> Var v
+        (Var v') | v ~= v' -> Var v
         e       -> e
 
 getBindTopVar :: CoreBind -> Var
@@ -518,8 +518,8 @@ removeTyEvidence = transformBi $ \case
 floatOutLets :: CoreProgram -> CoreProgram
 -- | Float let-binders to toplevel, e.g. f = let g = x in g => x 
 floatOutLets = transformBi $ \bind -> case bind :: CoreBind of
-     (NonRec v (Lam a (Let b (App (Var v') (Var a'))))) | getBindTopVar b ~== v'
-                                                        , a ~== a' -> transformBi (subst v v') (setBindTopVar v b)
+     (NonRec v (Lam a (Let b (App (Var v') (Var a'))))) | getBindTopVar b ~= v'
+                                                        , a ~= a' -> transformBi (subst v v') (setBindTopVar v b)
      (NonRec v (Let b (Var v'))) | getBindTopVar b == v' -> transformBi (subst v v') (setBindTopVar v b)
 
      bi -> bi

@@ -37,12 +37,12 @@ hasRedundantPattern mp sp =
           go [] (s:sc) = True -- no case in model solution
           go _ _       = False 
           checkCase e1 e2 = case (e1,e2) of
-            (Case e1 _ _ alts1,Case e2 _ _ alts2) | e1 ~== e2 -> length alts1 < length alts2                                 
+            (Case e1 _ _ alts1,Case e2 _ _ alts2) | e1 ~= e2 -> length alts1 < length alts2                                 
             (_,_) -> False 
          
 
 hasCase :: CoreExpr -> Bool 
-hasCase e = not $ null [ex | ex@(Case {}) <- universe e, not (e ~== ex)]
+hasCase e = not $ null [ex | ex@(Case {}) <- universe e, not (e ~= ex)]
           
 
 getRedundantPattern :: CoreProgram -> CoreProgram -> [Alt Var]
@@ -60,10 +60,10 @@ getRedundantPattern mp sp = {- if length mpCases == length spCases then zipWith 
           redAlts :: [Alt Var] -> [Alt Var] -> [Alt Var]
           redAlts [] [] = []
           redAlts [] xs@(y:ys) = xs
-          redAlts (x:xs) (y:ys) | x ~== y   = redAlts xs ys
+          redAlts (x:xs) (y:ys) | x ~= y   = redAlts xs ys
                                 | otherwise = checkCase (getExpr x) (getExpr y)
           checkCase e1 e2 = case (e1,e2) of
-            (Case e1 _ _ alts1,Case e2 _ _ alts2) | e1 ~== e2 -> redAlts alts1 alts2
+            (Case e1 _ _ alts1,Case e2 _ _ alts2) | e1 ~= e2 -> redAlts alts1 alts2
             (_,Case _ _ _ a) -> a
             (_,_) -> []
 

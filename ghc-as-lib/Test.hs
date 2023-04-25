@@ -127,7 +127,7 @@ compare_pr :: (FilePath -> IO CoreProgram) -> Bool -> FilePath -> FilePath -> IO
 compare_pr compile b fp1 fp2 = do
   cp1 <- compile fp1
   cp2 <- compile fp2
-  let res = cp1 ~== cp2
+  let res = cp1 ~> cp2
   when (not res && b) $ print $ "failed: " ++ fp1
   return res
 
@@ -136,7 +136,7 @@ compare_ :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO Bool
 compare_ comp_pass fp1 fp2 = do
   cp1 <- comp_pass fp1
   cp2 <- comp_pass fp2
-  return $ cp1 ~== cp2
+  return $ cp1 ~> cp2
 
 
 compare_desugar, compare_simpl, compare_norm, compare_float :: (FilePath,FilePath) -> IO Bool
@@ -255,8 +255,10 @@ testItem f (ti,n) = do
     stProg <- f exercisename "./studentfiles/Temp.hs"  -- student progrm
     modelFiles <- getFilePaths (msPath ++ exerciseid ti)
     mProgs <- mapM (f exercisename) modelFiles
-    let res = any (stProg ~==) mProgs -- any model matching
-    printRedundantPat ti stProg (zip mProgs modelFiles)
+    let pred = any (stProg ~>) mProgs  -- is predecessor to any of the model solutions
+        match = any (stProg ~=) mProgs -- is similar to any of the model solutions
+        res = pred || match 
+    --printRedundantPat ti stProg (zip mProgs modelFiles)
     case category ti of
         "Complete"   -> return (True, res,input ti)  -- program completed
         "OnTrack"    -> return (True, res,input ti)  -- recognised as on track
