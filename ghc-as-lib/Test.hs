@@ -29,6 +29,9 @@ import Data.Aeson
 import qualified Data.ByteString.Lazy as B
 import GHC.Generics
 import Control.Monad (when, unless)
+import Diff ((~~))
+import Analyse (hasRedundantPattern)
+import GHC.Driver.Session (programName)
 
 
 data Mode = DEBUG -- print which pair of files compared, and the result 
@@ -120,26 +123,26 @@ testPrA n ps = do
   putStr "programs match" >> mapM compare_norm ps >>= print
 
 
-compare_pr :: (FilePath -> IO CoreProgram) -> Bool -> FilePath -> FilePath -> IO Bool 
-compare_pr compile b fp1 fp2 = do 
+compare_pr :: (FilePath -> IO CoreProgram) -> Bool -> FilePath -> FilePath -> IO Bool
+compare_pr compile b fp1 fp2 = do
   cp1 <- compile fp1
   cp2 <- compile fp2
   let res = cp1 ~== cp2
-  when (not res && b) $ print $ "failed: " ++ fp1 
-  return res 
-  
+  when (not res && b) $ print $ "failed: " ++ fp1
+  return res
+
 
 compare_ :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO Bool
 compare_ comp_pass fp1 fp2 = do
   cp1 <- comp_pass fp1
   cp2 <- comp_pass fp2
-  return $ cp1 ~== cp2 
+  return $ cp1 ~== cp2
 
 
 compare_desugar, compare_simpl, compare_norm, compare_float :: (FilePath,FilePath) -> IO Bool
 compare_desugar = uncurry $ compare_ compC
-compare_simpl (p1,p2) = compare_ (compS (getExerciseName p1)) p1 p2 
-compare_norm (p1,p2) = compare_ (compN (getExerciseName p1)) p1 p2 
+compare_simpl (p1,p2) = compare_ (compS (getExerciseName p1)) p1 p2
+compare_norm (p1,p2) = compare_ (compN (getExerciseName p1)) p1 p2
 compare_float   = uncurry $ compare_ compF
 
 
@@ -226,7 +229,7 @@ msPath = "./modelsolutions/"
 testItems :: (ExerciseName -> FilePath -> IO CoreProgram) -> FilePath -> IO ()
 testItems f jsonfile = do
   items <- decodeJson jsonfile
-  results <- mapM (testItem f) items
+  results <- mapM (testItem f) (zip items [1..])
   let exps = filter (\(x,y,z) -> (x,y,z)==(True,True,z)) results -- same results as in Ask-Elle 
       expf = filter (\(x,y,z) -> (x,y,z)==(False,False,z)) results
       succ = filter (\(x,y,z) -> (x,y,z)==(False,True,z)) results
@@ -234,34 +237,62 @@ testItems f jsonfile = do
       nboftest = f items
       f = show . length
   putStrLn "printing expected failed attempts:"
-  mapM_ (\(_,_,prog) -> printProg prog) expf 
+  mapM_ (\(_,_,prog) -> printProg prog) expf
   putStrLn "printing failed attempts:"
   mapM_ (\(_,_,prog) -> printProg prog) fail
   putStrLn $ f exps ++ "/" ++ nboftest ++ " tests gave same successful result as Ask-Elle"
   putStrLn $ f expf ++ "/" ++ nboftest ++ " tests gave same failed result as Ask-Elle"
   putStrLn $ f succ ++ "/" ++ nboftest ++ " could now be matched"
   putStrLn $ f fail ++ "/" ++ nboftest ++ " expected to match, but failed"
- 
-testItem :: (ExerciseName -> FilePath -> IO CoreProgram) -> TestItem -> IO (Bool,Bool,String)
+
+testItem :: (ExerciseName -> FilePath -> IO CoreProgram) -> (TestItem,Int) -> IO (Bool,Bool,String)
 -- | (True,True) : Success in Ask-Elle, Success in ghc 
 --   (False,False) : Unknown in Ask-Elle, Failure in ghc 
 --   (False, True) : Unknown in Ask-Elle, success in ghc 
-testItem f ti = do
+testItem f (ti,n) = do
     writeProg ti
     let exercisename = takeBaseName (exerciseid ti)
     stProg <- f exercisename "./studentfiles/Temp.hs"  -- student progrm
     modelFiles <- getFilePaths (msPath ++ exerciseid ti)
     mProgs <- mapM (f exercisename) modelFiles
-    let b = any (stProg ~==) mProgs
-
+    let res = any (stProg ~==) mProgs -- any model matching
+    printRedundantPat ti stProg (zip mProgs modelFiles)
     case category ti of
-        "Complete"   -> return (True,b,input ti)  -- program completed
-        "OnTrack"    -> return (True,b,input ti)  -- recognised as on track
-        "Missing"    -> return (False,b,input ti) -- missing cases (not defined on all input)
-        "TestPassed" -> return (False,b,input ti) -- quickcheck tests passed, but could not be matched 
-        "Unknown"    -> return (False,b,input ti) -- unknown
+        "Complete"   -> return (True, res,input ti)  -- program completed
+        "OnTrack"    -> return (True, res,input ti)  -- recognised as on track
+        "Missing"    -> return (False,res,input ti)  -- missing cases (not defined on all input)
+        "TestPassed" -> return (False,res,input ti)  -- quickcheck tests passed, but could not be matched 
+        "Unknown"    -> return (False,res,input ti)  -- unknown
 
 
+
+-- | take an exercise name and a path to the file, 
+--   compare it with its model solutions
+printRedundantPat :: TestItem -> CoreProgram -> [(CoreProgram, FilePath)] -> IO ()
+printRedundantPat ti stProg modProgfiles = do
+    let (closest,cfile) = getSmallestP $ map (g stProg) modProgfiles -- get model prog with smallest diff 
+    let hasRedPat = closest `hasRedundantPattern` stProg
+    when hasRedPat (do
+      putStrLn "redundant pattern in student prog:"
+      putStrLn (input ti)
+      putStrLn "tried to match with model:"
+      putStrLn cfile
+      putStrLn "-------------------------")
+
+
+
+
+
+g p1 (p2,file) = ((p2,file), p1 ~~ p2) -- check diff 
+
+
+minBy :: Ord a => (b -> a) -> b -> b -> b
+minBy f x y
+  | f x <= f y = x
+  | otherwise = y
+
+getSmallestP :: [((CoreProgram,FilePath), Int)] -> (CoreProgram,FilePath)
+getSmallestP programs = fst $ foldr1 (minBy snd) programs
 
 printProg prog = do
      putStrLn "----------------------------------"

@@ -252,7 +252,7 @@ appTransf transf (p, env) = do
 ghcToIO :: Ghc (CoreProgram, HscEnv) -> IO (CoreProgram, HscEnv)
 ghcToIO x = runGhc (Just libdir) $ do x
 
-compNorm :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)
+{- compNorm :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)
 -- | Compile a Core program and apply transformations
 compNorm fname fp = runGhc (Just libdir) $ do
     (p',e) <- compCoreSt False fp
@@ -266,6 +266,21 @@ compNorm fname fp = runGhc (Just libdir) $ do
         prog = removeTyEvidence 
                p5
         env = e2
+    return (prog,env) -}
+compNorm :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)
+-- | Compile a Core program and apply transformations
+compNorm fname fp = runGhc (Just libdir) $ do
+    (p',e) <- compCoreSt False fp
+    let p = removeModInfo p'
+    p1 <- repHoles p 
+    p2 <- inlineBinds p1
+    p3 <- recToLetRec p2 
+    p4 <- etaExpP p3 
+    let
+        p5 = (alpha fname . floatOutLets . etaReduce . removeRedEqCheck) p4 
+        prog = removeTyEvidence 
+               p5
+    env <- getSession 
     return (prog,env)
 
 compFloat :: FilePath -> IO (CoreProgram, HscEnv)

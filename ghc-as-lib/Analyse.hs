@@ -33,15 +33,16 @@ hasRedundantPattern mp sp =
     where mpCases = [c | c@(Case e _ _ alts) <- universeBi mp :: [CoreExpr]]
           spCases = [c | c@(Case e _ _ alts) <- universeBi sp :: [CoreExpr]]
           go :: [CoreExpr] -> [CoreExpr] -> Bool  
-          go (m:mc) (s:sc) = checkCase m s
+          go (m:ms) (s:ss) = checkCase m s || length ms < length ss  
           go [] (s:sc) = True -- no case in model solution
           go _ _       = False 
           checkCase e1 e2 = case (e1,e2) of
-            (Case e1 _ _ alts1,Case e2 _ _ alts2) | e1 ~== e2 -> redAlts alts1 alts2  
-                                                  | otherwise -> False 
+            (Case e1 _ _ alts1,Case e2 _ _ alts2) | e1 ~== e2 -> length alts1 < length alts2                                 
             (_,_) -> False 
-          redAlts :: [Alt Var] -> [Alt Var] -> Bool  
-          redAlts ms ss = length ms < length ss 
+         
+
+hasCase :: CoreExpr -> Bool 
+hasCase e = not $ null [ex | ex@(Case {}) <- universe e, not (e ~== ex)]
           
 
 getRedundantPattern :: CoreProgram -> CoreProgram -> [Alt Var]

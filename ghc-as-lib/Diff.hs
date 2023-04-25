@@ -23,6 +23,8 @@ import Utils ( isHoleVar, sp, isHoleExpr, isHoleVarExpr)
 import GHC.Cmm (isAssociativeMachOp)
 import GHC.Core.Coercion (eqCoercion)
 import Data.Generics.Uniplate.Data ( children )
+import GHC.Core.Stats (exprSize)
+
 
 class Diff a where
     (~~) :: a -> a -> Int
@@ -30,36 +32,36 @@ class Diff a where
 instance Diff CoreProgram where
     (x:xs) ~~ (y:ys) = x ~~ y + xs ~~ ys
     [] ~~ []         = 0
-    _ ~~ _           = trace "different number of binders" 10 
+    _ ~~ _           = trace "different number of binders" 100 
 
 --- Without trace -------------------------------------
 instance Diff (Bind Var) where
     (Rec es) ~~ (Rec es') = sum $ zipWith (curry (\((b,e),(b',e')) -> b ~~ b' + e ~~ e')) es es'
     (NonRec v e) ~~ (NonRec v' e') = v ~~ v' + e ~~ e'
     x ~~ y  = case (x,y) of 
-        (NonRec v e,Rec [(v',e')])  -> v ~~ v' + e ~~ e' 
-        (Rec [(v',e')],NonRec v e)  -> v ~~ v' + e ~~ e' 
-        (_,_)                       -> 10 
-
+        (NonRec v e,Rec ((v',e'):es))  -> v ~~ v' + e ~~ e' + length es 
+        (Rec ((v',e'):es),NonRec v e)  -> v ~~ v' + e ~~ e' + length es 
 
 
 instance Diff (Expr Var) where
     (Var id) ~~ (Var id')                  = id ~~ id'
     (Type t) ~~ (Type t')                  = t ~~ t'
     (Lit l)  ~~ (Lit l')                   = l ~~ l' 
-    (App e arg) ~~ (App e' arg')           =  e ~~ e' + arg ~~ arg'
+    (App e arg) ~~ (App e' arg')           = e ~~ e' + arg ~~ arg'
     (Lam b e) ~~ (Lam b' e')               = b ~~ b' + e ~~ e'                                      
     (Case e v t as) ~~ (Case e' v' t' as') = t ~~ t' + e ~~ e' + as ~~ as'
     (Cast e co) ~~ (Cast e' co')           = co ~~ co' + e ~~ e'
     (Let b e)   ~~ (Let b' e')             = b ~~ b' + e ~~ e'
     (Coercion c) ~~ (Coercion c')          = c ~~ c'
     x ~~ y                                 | isHoleExpr x || isHoleExpr y = 0 
-                                           | otherwise = 1 + getDiff xc yc 
+                                           | otherwise = --trace (show x ++ " AGAINST " ++ show y) $
+                                                         1 + getDiff xc yc 
         where xc = children x 
               yc = children y 
-              getDiff (s:_) (m:_) = s ~~ m  
-              getDiff [] xs       = length xs  
-              getDiff ys  []      = length ys 
+              getDiff (s:ss) (m:ms) = s ~~ m + getDiff ss ms  
+              getDiff [] []         = 0
+              getDiff [] xs         = sum (map exprSize xs)
+              getDiff ys  []        = sum (map exprSize ys)
 
 instance Diff CoercionR where
     _ ~~ _ = 0 --eqCoercion might need causion for uniques of type variables 
@@ -82,7 +84,7 @@ instance Diff [Var] where
 
 instance Diff AltCon where
     (DataAlt a) ~~ (DataAlt a') = a ~~ a'
-    (LitAlt l)  ~~ (LitAlt l')  = l ~~ l -- literals will probably never match
+    (LitAlt l)  ~~ (LitAlt l')  = l ~~ l 
     DEFAULT     ~~ DEFAULT      = 0
     _ ~~ _                      = 1
 
@@ -91,9 +93,11 @@ instance Diff DataCon where
            | otherwise = 1
 
 instance Diff Var where
-    v1 ~~ v2 | getOccString v1 == getOccString v2 = 0
+    v1 ~~ v2 | getOccString v1 == getOccString v2  || isHoleVar v1 || isHoleVar v2 = 0
              | otherwise = 1
 
 instance Diff Type where
     k1 ~~ k2 | show k1 == show k2 = 0
              | otherwise = 1
+
+

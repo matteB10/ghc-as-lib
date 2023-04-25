@@ -3,6 +3,8 @@
 module Test7 where
 
 
+dupli :: [a] -> [a]
 dupli xs = case xs of  
     [] -> []
-    (x:xs) -> [x,x] ++ dupli xs 
+    [x] -> [x,x]
+    (x:xs) -> [x,x] ++ dupli xs

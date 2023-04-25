@@ -45,6 +45,19 @@ library
                       ,MyPlug
                       
     default-language: Haskell2010
-    other-modules:    Similar, Instance, Transform, Utils, Test, CompileHs, Rewrite, Parsers, HoleMatches, PrettyPrint
-
+    other-modules:    Similar 
+                      ,Instance 
+                      ,Transform 
+                      ,Utils
+                      ,Test 
+                      ,CompileHs
+                      ,Rewrite
+                      ,Parsers
+                      ,HoleMatches
+                      ,PrettyPrint
+                      ,Analyse
+                      ,Diff
+                      ,HoleMatches
+                      ,Instance
+                      ,PrettyPrint
 
