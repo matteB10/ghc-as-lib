@@ -3,6 +3,7 @@
 module Test5 where
 
 
+myreverse :: [a] -> [a]
 myreverse (x:xs) = myreverse xs ++ [x]
 myreverse [] = []
 myreverse _   = []

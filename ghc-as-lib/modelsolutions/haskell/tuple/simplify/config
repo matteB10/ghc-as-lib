@@ -1,0 +1,6 @@
+function=simplify
+type=(Int, Int) -> (Int, Int)
+prop_Main = \x@(a,b) -> b /= 0 ==> prop_Neg x .&&. prop_GCD x .&&. prop_EQ x
+prop_Neg = \x -> whenFail (putMsg "The denominator is a negative number") ((signum $ snd $ simplify x) > 0)
+prop_GCD = \x -> whenFail (putMsg "The result is not a simplest form") (let {(a,b) = simplify x} in gcd a b == 1)
+prop_EQ = \x -> whenFail (putMsg "The result does not represent the same value as the input") (let {si (n, d) = ((signum d * n) `div` (gcd n d), abs d `div` (gcd n d))} in si x == simplify x)

@@ -1,0 +1,242 @@
+[
+    {
+        "exerciseid": "haskell/list/mylast",
+        "input": "mylast [] =  _\nmylast (x:xs) = mylast (xs)",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "mylast [] =\n    ?\nmylast (x : xs) =\n    mylast (xs)",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "mylast :: [a] -> a"
+    },
+    {
+        "exerciseid": "haskell/list/mylast",
+        "input": "mylast [] =  _\nmylast (x:xs) = mylast xs",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "mylast [] =\n    ?\nmylast (x : xs) =\n    mylast xs",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "mylast :: [a] -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat  _ =  _  _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "elementat ? =\n    ? ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/mylength",
+        "input": "mylength xs =  _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "mylength xs =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "mylength :: [a] -> Int"
+    },
+    {
+        "exerciseid": "haskell/list/palindrome",
+        "input": "palindrome = \n    _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "palindrome =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "palindrome :: Eq a => [a] -> Bool"
+    },
+    {
+        "exerciseid": "haskell/list/pack",
+        "input": "pack [] = [[]]\npack  _ =  _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "pack [] =\n    [[]]\npack ? =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "pack :: Eq a => [a] -> [[a]]"
+    },
+    {
+        "exerciseid": "haskell/list/myreverse",
+        "input": "myreverse xs =  _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "myreverse xs =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "myreverse :: [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/palindrome",
+        "input": "palindrome xs = \n    _ (&&)  _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "palindrome xs =\n    ? (&&) ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "palindrome :: Eq a => [a] -> Bool"
+    },
+    {
+        "exerciseid": "haskell/list/pack",
+        "input": "pack [] = [[]]\npack [x] = [[x]]\npack (x:y:xs) =\n    _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "pack [] =\n    [[]]\npack [x] =\n    [[x]]\npack (x : y : xs) =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "pack :: Eq a => [a] -> [[a]]"
+    },
+    {
+        "exerciseid": "haskell/list/compress",
+        "input": "compress = \n   foldr skipDups []\n   where \n      skipDups  _  _ = \n          _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "compress =\n    foldr skipDups []\n    where\n        skipDups ? ? =\n            ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "compress :: Eq a => [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/pack",
+        "input": "pack [] = [[]]\npack [x] = [[x]]\npack  _ =  _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "pack [] =\n    [[]]\npack [x] =\n    [[x]]\npack ? =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "pack :: Eq a => [a] -> [[a]]"
+    },
+    {
+        "exerciseid": "haskell/list/encode",
+        "input": "encode [] = []\nencode (x:xs) = ( _ (== x) (x:xs)) : encode (dropWhile (==x) xs)",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "encode [] =\n    []\nencode (x : xs) =\n    (? (== x) (x : xs)) : encode (dropWhile (== x) xs)",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "encode :: Eq a => [a] -> [(Int, a)]"
+    },
+    {
+        "exerciseid": "haskell/list/encode",
+        "input": "encode [] = []\nencode (x:xs) =  _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "encode [] =\n    []\nencode (x : xs) =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "encode :: Eq a => [a] -> [(Int, a)]"
+    },
+    {
+        "exerciseid": "haskell/list/encode",
+        "input": "encode [] = []\nencode (x:xs) =  _\n   where parse [] = []\n         parse (x:xs) = (1, x) : parse xs",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "encode [] =\n    []\nencode (x : xs) =\n    ?\n    where\n        parse [] =\n            []\n        parse (x : xs) =\n            (1,x) : parse xs",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "encode :: Eq a => [a] -> [(Int, a)]"
+    },
+    {
+        "exerciseid": "haskell/list/dropevery",
+        "input": "dropevery xs n = take (n-1) xs ++ dropevery (drop n xs) n",
+        "output": {
+            "result": [
+                false,
+                "Diagnosing timed out, perhaps you have an infinite loop in your program.",
+                "dropevery xs n =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "dropevery :: [a] -> Int -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/mylength",
+        "input": "mylength = foldr ((+) . (const 0))  _",
+        "output": {
+            "result": [
+                false,
+                "You have drifted from the strategy in such a way that we can not help you any more.",
+                "mylength =\n    foldr ((+) . (const 0)) ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "Unknown",
+        "typesig": "mylength :: [a] -> Int"
+    }
+]

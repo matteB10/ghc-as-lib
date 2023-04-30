@@ -1,0 +1,15 @@
+Consider a tuple of integers to represent a rational number, such that the numerator is the first of the tuple and the denominator the second.
+Write a function that will calculate the simplest form of such a tuple and also rewrites any negative tuple such that the minus sign is present in the numerator.
+You assume the denominator is unequal to zero.
+
+simplify :: (Int, Int) -> (Int, Int)
+
+For Example:
+
+> simplify (2, -4)
+((-1),2)
+
+and:
+
+> simplify (-6,-9)
+(2,3)

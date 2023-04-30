@@ -5,6 +5,8 @@ module Mod8 where
     "map/listcomprh"   forall f xs.  map f xs = [f x | x <- xs] 
 #-}
 
+
+
 -- this rule does not fire, it might not be considered "cheap" enough by ghc.
 
 dupli :: [a] -> [a]

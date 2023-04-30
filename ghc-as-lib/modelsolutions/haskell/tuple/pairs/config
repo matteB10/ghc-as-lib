@@ -1,0 +1,5 @@
+function=pairs
+type= [a] -> [(a,a)]
+prop_Main = \xs -> nub xs == xs ==> prop_Missing xs .&&. prop_Residu xs 
+prop_Missing = \xs -> let {ps [] = []; ps (y:ys) = map (\z -> (y,z)) (y:ys) ++ ps ys; missing = ps xs \\ pairs xs} in whenFail (putMsg ("You are missing the following items:\n" ++ show missing ++ "\nfor input:n" ++ show xs)) (length missing <= 0)
+prop_Residu = \xs -> let {ps [] = []; ps (y:ys) = map (\z -> (y,z)) (y:ys) ++ ps ys; residu = pairs xs \\ ps xs} in whenFail (putMsg ("You incorrectly include the following items:\n" ++ show residu ++ "\nfor input\n" ++ show xs)) (length residu <= 0)

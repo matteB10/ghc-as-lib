@@ -1,0 +1,15 @@
+Haskell uses currying, a method named after mathematician Haskell Curry. The method allows us to partly parameterize a function application, meaning we don't have to give it all its arguments. The result is another function which still expects one (or more) arguments.
+
+For example
+((+) 3) is a function which takes 1 argument (an integer or numeral).
+
+Without currying functions would always be applied to a single argument, namely a (nested) tuple.
+
+For example
+(+) (3,7)
+
+The goal of this exercise is to write a function myuncurry that takes a function of 2 arguments and
+returns a function that takes one argument (a tuple) and returns the same value as the input function.
+
+> myuncurry (+) (3,7)
+10

@@ -4,4 +4,4 @@
 module Mod1 where 
     
 dupli :: [a] -> [a]
-dupli = _
+dupli = foldr (\x xs -> x:x:xs) []

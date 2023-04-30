@@ -1,0 +1,9 @@
+Write a function that creates all pairs of the items of a list, excluding the ones that we consider equal under the rule (a, b) == (b, a)
+You can assume that the input list will not have duplicate elements.
+
+pairs :: [a] -> [(a,a)]
+
+For example:
+
+>pairs [1..3]
+[(1,1),(1,2),(1,3),(2,2),(2,3),(3,3)]

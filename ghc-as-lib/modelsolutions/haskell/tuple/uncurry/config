@@ -1,0 +1,3 @@
+function=myuncurry
+type=(a -> b -> c) -> (a, b) -> c
+prop_Main = \a@(x,y) -> whenFail (putMsg "Uncurrying plus (+) does not give the right result") ((+) (x :: Int) (y :: Int) == myuncurry (+) a)
