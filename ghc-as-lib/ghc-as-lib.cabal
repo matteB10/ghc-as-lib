@@ -30,6 +30,7 @@ library
                       ,transformers
                       ,QuickCheck
                       ,uniplate == 1.6.13
+                      ,exceptions
                       ,text 
                       ,lens 
                       ,directory

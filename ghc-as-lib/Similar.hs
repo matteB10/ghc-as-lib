@@ -20,8 +20,9 @@ import GHC.Core.DataCon (DataCon(..), dataConName)
 import GHC.Utils.Outputable (showSDocUnsafe, Outputable (ppr))
 import GHC.Types.Literal (Literal(..), LitNumType)
 
-import Utils ( isHoleVar, sp, isHoleVarExpr, isHoleExpr, isPatError)
+import Utils ( isHoleVar, sp, isHoleVarExpr, isHoleExpr, isPatError, getAltExp, isCaseExpr)
 import GHC.Core.Coercion (eqCoercion)
+import GHC.Core.Utils (exprType)
 
 class Similar a where
     (~=) :: a -> a -> Bool
@@ -62,11 +63,13 @@ instance Similar (Expr Var) where
     (App e arg) ~> (App e' arg')           = e ~> e' && arg ~> arg'
 
     (Lam b e) ~> (Lam b' e')               = b  ~> b' && e ~> e' -- check that the type of the head is equal                                      
-    (Case e v t as) ~> (Case e' v' t' as') = t  ~> t' && e ~> e' && as ~> as'
+    (Case e v t as) ~> (Case e' v' t' as') = e ~> e' && v ~> v' && t  ~> t' && as ~> as'
+    e            ~> (Case e' v t as)       = any ((e ~>) . getAltExp) as 
     (Cast e co)  ~> (Cast e' co')          = co ~> co' && e ~> e'
     (Let b e)    ~> (Let b' e')            = b  ~> b' && e ~> e'
+    e            ~> (Let b' e')            = e ~> e' 
     (Coercion c) ~> (Coercion c')          = c  ~> c'
-    x ~> y                                 = isHoleVarExpr x || isHoleVarExpr y
+    x ~> y                                 = isHoleVarExpr x || isHoleExpr x 
 
     (Var id) ~= (Var id')                  = id ~= id'
     (Type t) ~= (Type t')                  = t ~= t'
@@ -76,7 +79,7 @@ instance Similar (Expr Var) where
     (App e arg) ~= (App e' arg')           = e ~= e' && arg ~= arg'
 
     (Lam b e) ~= (Lam b' e')               = b  ~= b' && e ~= e' -- check that the type of the head is equal                                      
-    (Case e v t as) ~= (Case e' v' t' as') = t  ~= t' && e ~= e' && as ~= as'
+    (Case e v t as) ~= (Case e' v' t' as') = e ~= e' && t  ~= t' && v ~= v' && as ~= as'
     (Cast e co)  ~= (Cast e' co')          = co ~= co' && e ~= e'
     (Let b e)    ~= (Let b' e')            = b  ~= b' && e ~= e'
     (Coercion c) ~= (Coercion c')          = c  ~= c'
@@ -105,8 +108,12 @@ instance Similar [Alt Var] where
 
 instance Similar (Alt Var) where
     (Alt ac vs e) ~> (Alt ac' vs' e') | --trace ("isPatErr" ++ show (isPatError e) ++ show e) 
-                                        isPatError e = ac ~> ac' && vs ~> vs' -- if pattern error, student has missing cases, we dont check nested cases
-                                      | otherwise     = ac ~> ac' && vs ~> vs' && e ~> e'
+                                        isPatError e   = ac ~> ac' && vs ~> vs' -- if pattern error, student has missing cases, we dont check nested cases
+                                      -- | not . isCaseExpr $ e = case e' of 
+                                      --    Case _ _ _ as -> ac ~> ac' && vs ~> vs' && any ((e ~>) . getAltExp) as  
+                                      --    _      ->  compareAll 
+                                      | otherwise = compareAll
+                where compareAll = ac ~> ac' && vs ~> vs' && e ~> e'
     (Alt ac vs e) ~= (Alt ac' vs' e')  = ac ~= ac' && vs ~= vs' && e ~= e'
 
 instance Similar [Var] where
@@ -118,8 +125,8 @@ instance Similar [Var] where
 instance Similar AltCon where
     (DataAlt a) ~> (DataAlt a') = a ~> a'
     (LitAlt l)  ~> (LitAlt l')  = l ~> l'
-    DEFAULT     ~> DEFAULT      = True
-    _ ~> _                      = False
+    DEFAULT     ~> _            = True
+    _           ~> _            = False
     (~=) = (~>)
 
 instance Similar DataCon where
@@ -127,7 +134,7 @@ instance Similar DataCon where
     (~=) = (~>)
 
 instance Similar Var where
-    v1 ~> v2 = (isHoleVar v1 || isHoleVar v2) || getOccString v1 == getOccString v2
+    v1 ~> v2 = isHoleVar v1 || getOccString v1 == getOccString v2
     v1 ~= v2 = getOccString v1 == getOccString v2
 
 instance Similar Type where
@@ -144,6 +151,8 @@ instance Eq (Bind Var) where
 
 instance Eq (Expr Var) where
     (==) = (~>)
+
+
 
 {- we need checks for e.g  xs == reverse xs ~== reverse xs == xs 
 however, pattern matching like below does not scale well at all. 

@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MonoLocalBinds #-}
 module Utils where 
 
 
@@ -70,6 +71,10 @@ varNameUnique :: Var -> String
 varNameUnique = showSDocUnsafe . ppr 
 
 
+isCaseExpr :: CoreExpr -> Bool 
+isCaseExpr (Case {}) = True 
+isCaseExpr _         = False 
+
 isHoleExpr :: CoreExpr-> Bool
 isHoleExpr (Case e _ t _) = case getTypErr e of 
                                 Just pe -> True 
@@ -121,6 +126,14 @@ sub v v' = \case
     (Var id) | id == v' -> (Var v)
     e -> e
 
+subE :: CoreExpr -> Var -> CoreExpr -> CoreExpr
+-- | Replace the variable with an expression 
+subE e v = transformBi $ \case
+    (Var id) | id == v -> e 
+    e -> e
+
+getAltExp :: Alt Var -> CoreExpr 
+getAltExp (Alt _ _ e) = e 
 
 getTypErr :: CoreExpr-> Maybe Var
 getTypErr = getVarFromName "typeError" 

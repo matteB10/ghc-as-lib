@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# OPTIONS_GHC -Wno-all #-}
 {-# HLINT ignore "Use camelCase" #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -10,6 +11,14 @@ import GHC (HscEnv)
 import GHC.Utils.Outputable
 
 import Compile
+    ( Warning(..),
+      typeCheckCore,
+      compSimpl,
+      compC,
+      compN,
+      compF,
+      compS )
+import Data.Ord 
 import Transform
 import Similar
 import Utils
@@ -18,20 +27,21 @@ import PrettyPrint
 
 import System.Directory (listDirectory, doesDirectoryExist)
 import System.FilePath ((</>), takeDirectory, takeExtension, takeBaseName)
-import Data.List (isSuffixOf, isPrefixOf)
+import Data.List (isSuffixOf, isPrefixOf, sortOn)
 import Data.Char (isDigit)
 import Control.Lens (rewrite)
 import Test.QuickCheck (ASCIIString(getASCIIString))
 
 import System.IO
 import System.IO.Temp
-import Data.Aeson
+import Data.Aeson hiding (Error)
 import qualified Data.ByteString.Lazy as B
 import GHC.Generics
 import Control.Monad (when, unless)
 import Diff ((~~))
 import Analyse (hasRedundantPattern)
-import GHC.Driver.Session (programName)
+import GHC.Driver.Session (programName, WarningFlag (..), WarnReason (..))
+import GHC.Plugins (fstOf3, showSDoc)
 
 
 data Mode = DEBUG -- print which pair of files compared, and the result 
@@ -125,18 +135,18 @@ testPrA n ps = do
 
 compare_pr :: (FilePath -> IO CoreProgram) -> Bool -> FilePath -> FilePath -> IO Bool
 compare_pr compile b fp1 fp2 = do
-  cp1 <- compile fp1
-  cp2 <- compile fp2
-  let res = cp1 ~> cp2
+  model <- compile fp1
+  student <- compile fp2
+  let res = student ~> model 
   when (not res && b) $ print $ "failed: " ++ fp1
   return res
 
 
 compare_ :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO Bool
 compare_ comp_pass fp1 fp2 = do
-  cp1 <- comp_pass fp1
-  cp2 <- comp_pass fp2
-  return $ cp1 ~> cp2
+  model <- comp_pass fp1
+  student <- comp_pass fp2
+  return $ student ~> model
 
 
 compare_desugar, compare_simpl, compare_norm, compare_float :: (FilePath,FilePath) -> IO Bool
@@ -208,8 +218,6 @@ data TestItem = TestItem { exerciseid :: String
                          , typesig    :: String}
       deriving (Generic, Show)
 
-data Category = Success Bool | Unknown Bool | MissingCase Bool | Ontrack Bool | TestPassed Bool
-
 instance ToJSON TestItem where
     toEncoding = genericToEncoding defaultOptions
 
@@ -227,29 +235,29 @@ decodeJson fp = do
 msPath = "./modelsolutions/"
 
 testItems :: (ExerciseName -> FilePath -> IO CoreProgram) -> FilePath -> IO ()
-testItems f jsonfile = do
+testItems c jsonfile = do
   items <- decodeJson jsonfile
-  results <- mapM (testItem f) (zip items [1..])
+  results <- mapM (testItem c) items 
   let exps = filter (\(x,y,z) -> (x,y,z)==(True,True,z)) results -- same results as in Ask-Elle 
       expf = filter (\(x,y,z) -> (x,y,z)==(False,False,z)) results
       succ = filter (\(x,y,z) -> (x,y,z)==(False,True,z)) results
       fail = filter (\(x,y,z) -> (x,y,z)==(True,False,z)) results
       nboftest = f items
       f = show . length
+  putStrLn "printing failed attempts:"
+  mapM_ (\(_,_,prog) -> printProg prog) fail 
   putStrLn "printing expected failed attempts:"
   mapM_ (\(_,_,prog) -> printProg prog) expf
-  putStrLn "printing failed attempts:"
-  mapM_ (\(_,_,prog) -> printProg prog) fail
   putStrLn $ f exps ++ "/" ++ nboftest ++ " tests gave same successful result as Ask-Elle"
   putStrLn $ f expf ++ "/" ++ nboftest ++ " tests gave same failed result as Ask-Elle"
   putStrLn $ f succ ++ "/" ++ nboftest ++ " could now be matched"
   putStrLn $ f fail ++ "/" ++ nboftest ++ " expected to match, but failed"
 
-testItem :: (ExerciseName -> FilePath -> IO CoreProgram) -> (TestItem,Int) -> IO (Bool,Bool,String)
+testItem :: (ExerciseName -> FilePath -> IO CoreProgram) -> TestItem -> IO (Bool,Bool,String)
 -- | (True,True) : Success in Ask-Elle, Success in ghc 
 --   (False,False) : Unknown in Ask-Elle, Failure in ghc 
 --   (False, True) : Unknown in Ask-Elle, success in ghc 
-testItem f (ti,n) = do
+testItem f ti = do
     writeProg ti
     let exercisename = takeBaseName (exerciseid ti)
     stProg <- f exercisename "./studentfiles/Temp.hs"  -- student progrm
@@ -257,7 +265,8 @@ testItem f (ti,n) = do
     mProgs <- mapM (f exercisename) modelFiles
     let pred = any (stProg ~>) mProgs  -- is predecessor to any of the model solutions
         match = any (stProg ~=) mProgs -- is similar to any of the model solutions
-        res = pred || match 
+        res =  pred || match 
+    --print res 
     --printRedundantPat ti stProg (zip mProgs modelFiles)
     case category ti of
         "Complete"   -> return (True, res,input ti)  -- program completed
@@ -265,8 +274,8 @@ testItem f (ti,n) = do
         "Missing"    -> return (False,res,input ti)  -- missing cases (not defined on all input)
         "TestPassed" -> return (False,res,input ti)  -- quickcheck tests passed, but could not be matched 
         "Unknown"    -> return (False,res,input ti)  -- unknown
-
-
+  
+  
 
 -- | take an exercise name and a path to the file, 
 --   compare it with its model solutions
@@ -301,14 +310,93 @@ printProg prog = do
      putStrLn prog
      putStrLn "----------------------------------\n"
 
-tempHeader = "{-# OPTIONS_GHC -Wno-typed-holes #-} \n module Temp where\n"
+tempHeader = "module Temp where\n"
 
 writeProg :: TestItem -> IO ()
 writeProg ti = do
-    let inputstr = tempHeader ++ typesig ti `nl` input ti
+    rules <- readFile "Rules.hs"
+    let inputstr = tempHeader ++ typesig ti `nl` input ti `nl` rules 
     -- Write the inputstr to the temporary file
     handle <- openFile "studentfiles/Temp.hs" WriteMode
     hPutStrLn handle inputstr
     hFlush handle
     hClose handle
+
+writeInput :: String -> IO ()
+writeInput input = do
+    rules <- readFile "Rules.hs"
+    -- must insert type signature in a better way later, if not defined by student 
+    let inputstr = tempHeader `nl` input `nl` rules 
+    -- Write the inputstr to the temporary file
+    handle <- openFile "studentfiles/Temp.hs" WriteMode
+    hPutStrLn handle inputstr
+    hFlush handle
+    hClose handle
+
+data Feedback = IncompletePat String 
+              | OverlappingPat String 
+              | Complete
+              | Error String  
+              | NoWarns   
+              | Ontrack Feedback 
+              | General String 
+              | Unknown Feedback
+              | Many [Feedback]
+
+instance Show Feedback where 
+  show Complete           = "You've finished the exercise"
+  show NoWarns            = ""   
+  show (IncompletePat s)  = "You have an incomplete pattern:\n" ++ s 
+  show (OverlappingPat s) = "You have an overlapping pattern:\n" ++ s 
+  show (Error s)          = "Detected an error " ++ s 
+  show (Ontrack f)        = "Solution is on track\n" ++ show f 
+  show (Unknown f)        = "Unknown: " ++ show f 
+  show (Many fs)          = concatMap show fs 
+  show (General s)        = s 
+
+analyseItems :: FilePath -> IO () 
+analyseItems jsonfile = do 
+  items <- decodeJson jsonfile
+  mapM_ analyse' items 
+
+analyse' :: TestItem -> IO () 
+analyse' ti = do 
+  writeProg ti 
+  let exercisename = takeBaseName (exerciseid ti)
+  (stProg,e,warns) <- compSimpl exercisename "./studentfiles/Temp.hs"  -- student progrm
+  modelFiles <- getFilePaths (msPath ++ (exerciseid ti))
+  mProgs <- mapM (compSimpl exercisename) modelFiles 
+  let pred = any ((stProg ~>) . fstOf3) mProgs  -- is predecessor to any of the model solutions
+      match = any ((stProg ~=) . fstOf3) mProgs -- is similar to any of the model solutions
+  if match then print Complete 
+           else let feedback = feedBackFromWarnings warns  
+                in if pred then print $ Ontrack feedback 
+                                    else print (Unknown feedback) >>  putStrLn (input ti)
+
+analyse :: String -> ExerciseName -> IO Feedback 
+analyse input exercise = do 
+  writeInput input
+  let exercisename = takeBaseName exercise 
+  (stProg,e,warns) <- compSimpl exercisename "./studentfiles/Temp.hs"  -- student progrm
+  modelFiles <- getFilePaths (msPath ++ exercise)
+  mProgs <- mapM (compSimpl exercisename) modelFiles 
+  let pred = any ((stProg ~>) . fstOf3) mProgs  -- is predecessor to any of the model solutions
+      match = any ((stProg ~=) . fstOf3) mProgs -- is similar to any of the model solutions
+  if match then return Complete
+           else let feedback = feedBackFromWarnings warns  
+                in return $ if pred then Ontrack feedback 
+                                    else Unknown feedback   
+                 
+
+
+feedBackFromWarnings :: [Warning] -> Feedback
+feedBackFromWarnings [] = NoWarns 
+feedBackFromWarnings ws = Many $ map getFeedback ws 
+  where getFeedback w = case w of 
+          (W (Reason Opt_WarnIncompletePatterns) _ _ doc) -> IncompletePat (showSDocUnsafe doc)
+          (W (Reason Opt_WarnOverlappingPatterns) _ _ doc) -> OverlappingPat (showSDocUnsafe doc)
+          (W (ErrReason e) _ _ doc) -> Error (showSDocUnsafe doc)
+          (W _ _ _ doc) -> General (showSDocUnsafe doc)
+        
+
 

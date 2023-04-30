@@ -63,7 +63,7 @@ import GHC.Core.Lint (interactiveInScope)
 import GHC.Runtime.Context (extendInteractiveContextWithIds)
 
 
-import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError, getVarFromName, isEvOrTyVar, isEvOrTyExp, isTy, ins, insB, subst )
+import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError, getVarFromName, isEvOrTyVar, isEvOrTyExp, isTy, ins, insB, subst, subE )
 import Similar ( Similar((~=)) )
 import Data.Type.Equality (apply)
 import Instance ( BiplateFor )
@@ -74,11 +74,12 @@ import GHC.Core.Predicate (isEvVar)
 import GHC.Core.Opt.FloatOut ( floatOutwards )
 import GHC.Utils.Logger (initLogger)
 import GHC.Types.Unique.Supply (mkSplitUniqSupply)
-import GHC.Core.Type ( Type, Var(..), isLinearType, isTyVar )
+import GHC.Core.Type ( Type, Var(..), isLinearType, isTyVar, dropForAlls )
 import GHC.Types.Id (setIdArity, setIdInfo, idDataCon, isDataConId_maybe)
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 (pack)
 import GHC.Builtin.Uniques (mkBuiltinUnique)
+import Analyse (hasCase)
 
 
 data St = St {
@@ -111,6 +112,15 @@ etaRed (Lam v (App f args)) =
               ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
               ,not (isEvVar v)   -- don't remove evidence variables 
                -> return f
+      _      -> Nothing
+etaRed (Lam v (Let b (App f args))) =
+   case args of
+      Var v' | v == v'
+              ,not (isTyVar v)
+              ,not (isLinearType (exprType f)) -- don't eta-reduce eta-expanded data constructors (with linear types)
+              ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
+              ,not (isEvVar v)   -- don't remove evidence variables 
+               -> return (Let b f)
       _      -> Nothing
 etaRed _ = Nothing
 
@@ -154,10 +164,15 @@ etaExpP p = do
                 b@(NonRec v e) | wantEtaExpB df v e -> NonRec v (eta e df)
                                | otherwise          -> --trace ("arity of " ++ show v `sp` show (arityTypeArity $ findRhsArity df v e (exprArity e)))
                                                        b
-                b -> b 
+                b@(Rec es) -> Rec (etaExp df es)
 --
           eta expr df = let arit = exprEtaExpandArity df expr
                         in etaExpandAT arit expr
+          etaExp df [] = []
+          etaExp df ((v,e):es) | wantEtaExpansion df e = (v,eta e df):etaExp df es 
+                               | otherwise = (v,e):etaExp df es 
+          
+
 
 
 
@@ -511,6 +526,19 @@ removeTyEvidence = transformBi $ \case
     where isEvBind (NonRec bi e) = isEvOrTyVar bi && isEvOrTyExp e
           isEvBind (Rec es) = all (isEvOrTyVar . fst) es && all (isEvOrTyExp . snd) es
 
+replaceCaseBinds :: CoreProgram -> CoreProgram 
+-- | Substitute back the scrutinee for case binded name in case expressions
+replaceCaseBinds = transformBi repBinds  
+
+repBinds :: CoreExpr -> CoreExpr
+-- | replace case result binder with scrutinee 
+--  e.g. Case xs of ys -> {(n:ns) -> f ys} =>  Case xs of ys -> {(n:ns) -> f xs}
+repBinds (Case e b t as) = Case e b t (map (sub e b) as)
+    where sub :: CoreExpr ->  Var -> Alt Var -> Alt Var
+          sub e v (Alt ac vars ex) = Alt ac vars (subE e v ex) 
+repBinds e = e 
+    
+
 
 
 -- Experimental 
@@ -527,3 +555,102 @@ floatOutLets = transformBi $ \bind -> case bind :: CoreBind of
 setBindTopVar :: Var -> CoreBind -> CoreBind
 setBindTopVar new (NonRec v e)     = NonRec new e
 setBindTopVar new (Rec ((v,e):es)) = Rec ((new,e):es)
+
+
+--- EXPERIMENTAL STUFF BELOW
+----------------------------------------------------
+----------------------------------------------------
+
+
+
+
+addDefaultCase :: CoreProgram -> Ghc CoreProgram
+addDefaultCase p = do 
+    env <- getSession 
+    let ic = hsc_IC env
+    let inscopeVars = mkInScopeSet $ mkUniqSet $ interactiveInScope ic
+    transformBiM (addDefCase inscopeVars) p 
+
+newGhcVar :: Type -> InScopeSet -> Ghc Id 
+newGhcVar t is = do
+    let uq = unsafeGetFreshLocalUnique is
+        name = makeName "fresh" uq (mkGeneralSrcSpan (mkFastString "Dummy location"))
+        id'  = mkLocalId name t t  -- reuse id information from top-level binder'
+    return id'
+    
+addDefCase :: InScopeSet -> CoreBind -> Ghc CoreBind 
+addDefCase is (NonRec b e)     | not (hasCase e) && not (isEvOrTyVar b) = (addCase is e) >>= \ex -> return $ NonRec b ex 
+addDefCase is (Rec ((b,e):es)) | not (hasCase e) && not (isEvOrTyVar b) = (addCase is e) >>= \ex -> return $ Rec ((b,ex):es) 
+addDefCase is b = return b 
+                        -- | needsCaseBinding (varType v) e = addCase e v -- rather tests whether
+                                                                       -- needs to use a case rather than let bind
+
+addCase :: InScopeSet -> Expr Var -> Ghc (Expr Var)
+addCase is e = do
+    let v = getFirstNonTypeLam e 
+    let t = ft_res $ ft_res (dropForAlls $ exprType e) 
+    wild <- newGhcVar t is  -- should have same type as the case 
+    return $ liftLambdas e (Case (Var v) wild t [Alt DEFAULT [] (innerExp e)])
+    where innerExp (Lam v e) = innerExp e 
+          innerExp e         = e 
+          liftLambdas (Lam v e) ex = Lam v (liftLambdas e ex)
+          liftLambdas _ ex         = ex 
+          getFirstNonTypeLam (Lam v e) | isEvOrTyVar v = getFirstNonTypeLam e  
+                                       | otherwise = v 
+          getFirstNonTypeLam ex = error (show ex)
+
+
+{- addDefaultCase :: CoreProgram -> CoreProgram
+addDefaultCase p = evalState (pm p) initSt
+    where pm :: CoreProgram -> Ctx CoreProgram
+          pm = transformBiM addDefCase
+addDefCase :: Expr Var -> Ctx (Expr Var)
+addDefCase ex@(Lam v e) | isTyVar v                     = Lam v <$> addDefCase e
+                        | needsCaseBinding (varType v) e = addCase e v -- rather tests whether
+                                                                       -- needs to use a case rather than let bind
+addDefCase e = return e -}
+{- 
+addCase :: Expr Var -> Var -> Ctx (Expr Var)
+addCase e v = do
+    let t = varType v
+    fresh <- freshVar t
+    wild <- freshVar t  -- should have same type as the case 
+    e' <- subst_ fresh v e
+    return $ Lam fresh $ mkDefaultCase (Var fresh) wild e'
+ -}
+
+-- Core Utils 
+-- mkSingleAltCase
+-- needsCaseBInding
+-- bindNonRec
+-- mkAltExpr -- make case alternatives 
+-- | Extract the default case alternative
+-- findDefault :: [Alt b] -> ([Alt b], Maybe (Expr b))
+-- -- | Find the case alternative corresponding to a particular
+-- constructor: panics if no such constructor exists
+-- findAlt :: AltCon -> [Alt b] -> Maybe (Alt b)
+-- check if we can use diffBinds from Core.Utils to find small diffs 
+-- diffExpr instead of my similarity relation? need an RnEnv2
+-- mkLamTypes :: [Var] -> Type -> Type
+-- can this be used for beta-expansioN???????
+-- applyTypeToArgs :: HasDebugCallStack => SDoc -> Type -> [CoreExpr] -> Type
+-- ^ Determines the type resulting from applying an expression with given type
+--- to given argument expressions.
+-- Do I need to do this backwards when eta-reducing?
+caseToGuard :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
+caseToGuard = rewriteBi etaRed
+ctg :: Expr Var ->  Maybe (Expr Var)
+-- | case to guard, e.g. case e of {Just a -> a} => case (e == Just a) of {True -> a}
+ctg (Lam v (App f args)) =
+   case args of
+      Var v' | v == v' -> return f
+      _                -> Nothing
+ctg _ = Nothing
+
+freshVar :: Type -> Ctx Id
+freshVar t = do
+    j <- gets freshNum
+    let name = makeName ("fresh" ++ show j) (mkUnique 'x' 0) $ mkGeneralSrcSpan (mkFastString "dummy loc")
+    let id = mkLocalVar VanillaId name t t vanillaIdInfo
+    modify $ \s -> s {env = Map.insert id id (env s), freshNum = j+1} -- update map 
+    return id 

@@ -1,8 +1,11 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-} -- disable warnings from unrecognised pragma in model solution files 
 {-# OPTIONS_GHC -Wno-typed-holes #-}
+{-# OPTIONS_GHC -Wno-all #-}
 {-# HLINT ignore "Use camelCase" #-}
 {-# HLINT ignore "Redundant bracket" #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 
 module Compile where
 
@@ -40,22 +43,22 @@ import GHC
       DesugaredModule (dm_core_module, dm_typechecked_module),
       compileToCoreSimplified,
       parseExpr,
-      CoreModule (cm_binds, cm_types), pprVarSig, compileToCoreModule, SrcLoc, getContext, getRealSrcSpan, lookupName, TypecheckedSource, gopt, ModSummary (ModSummary), ParsedModule (ParsedModule), Target)
+      CoreModule (cm_binds, cm_types), pprVarSig, compileToCoreModule, SrcLoc, getContext, getRealSrcSpan, lookupName, TypecheckedSource, gopt, ModSummary (ModSummary), ParsedModule (ParsedModule), Target, Severity (..), showGhcException, GhcException, defaultWarnErrLogger, pushLogHookM, mkHsDocString, popLogHookM)
 
 --import GHC.Show
 import GHC.Paths (libdir)
 import GHC.Data.Bag ()
 
-import GHC.Driver.Session (defaultFatalMessager, defaultFlushOut, gopt_set, optimisationFlags, dopt_set, WarningFlag (Opt_WarnUnrecognisedPragmas, Opt_WarnTypedHoles), gopt_unset, wopt_unset)
-import GHC.Driver.Flags ( DumpFlag(..), GeneralFlag (..))
-import GHC.Utils.Outputable ( Outputable(..), showSDocUnsafe)
+import GHC.Driver.Session (defaultFatalMessager, defaultFlushOut, gopt_set, optimisationFlags, dopt_set, WarningFlag (Opt_WarnUnrecognisedPragmas, Opt_WarnTypedHoles, Opt_WarnInlineRuleShadowing, Opt_WarnOverlappingPatterns, Opt_WarnRedundantConstraints, Opt_WarnIncompletePatterns, Opt_WarnInaccessibleCode), gopt_unset, wopt_unset, initSDocContext, wopt_set)
+import GHC.Driver.Flags ( DumpFlag(..), GeneralFlag (..), WarnReason (..))
+import GHC.Utils.Outputable ( Outputable(..), showSDocUnsafe, defaultErrStyle, defaultSDocContext)
 import Control.Monad.IO.Class ( MonadIO(liftIO) )
 import GHC.Unit.Module.ModGuts (mg_binds, ModGuts (mg_module, mg_binds))
 import GHC.Core ( Bind(..), Expr(..), CoreProgram, Alt(..), AltCon(..), CoreBind(..), CoreExpr, CoreBndr)
 import GHC.Driver.Ppr (showPpr)
 import GHC.CoreToStg (coreToStg)
 import GHC.Types.SourceError ( handleSourceError, SourceError (SourceError))
-import GHC.Types.Error (getErrorMessages, MsgEnvelope)
+import GHC.Types.Error (getErrorMessages, MsgEnvelope, mkLocMessage, WarningMessages)
 import GHC.Core.DataCon (DataCon(..), mkDataCon, dataConName)
 import GHC.Types.Var (Var(..), TyCoVarBinder(..), VarBndr(..), ArgFlag(..), AnonArgFlag, TyCoVar, Specificity(..), idDetails, setIdExported)
 import GHC.Types.Literal (Literal(..), LitNumType, pprLiteral)
@@ -69,7 +72,7 @@ import GHC.Core.Lint
 
 import GHC.Tc.Errors.Hole ()
 import GHC.Tc.Errors.Hole.FitTypes ()
-import GHC.Driver.Env (HscEnv(hsc_plugins, hsc_static_plugins, hsc_dflags, hsc_logger, HscEnv, hsc_IC, hsc_NC))
+import GHC.Driver.Env (HscEnv(hsc_plugins, hsc_static_plugins, hsc_dflags, hsc_logger, HscEnv, hsc_IC, hsc_NC), runHsc, Hsc(..))
 import GHC.Driver.Monad (modifySession, Ghc, putMsgM, liftGhcT, withSession, Session)
 import qualified GHC.Data.EnumSet as EnumSet
 import GHC.Utils.Encoding (utf8DecodeByteString)
@@ -93,7 +96,7 @@ import Control.Monad (when, unless)
 
 import Similar
 import Instance
-import Transform (etaReduce, alpha, removeModInfo, repHoles, etaExpP, recToLetRec, inlineBinds, floatOut, replacePatErrorLits, removeRedEqCheck, removeTyEvidence, recToLetRec, floatOutLets)
+import Transform (etaReduce, alpha, removeModInfo, repHoles, etaExpP, recToLetRec, inlineBinds, floatOut, replacePatErrorLits, removeRedEqCheck, removeTyEvidence, recToLetRec, floatOutLets, addDefaultCase, replaceCaseBinds, aRename)
 import Utils
     ( banner, findLiterals, printHoleLoc, showGhc, ExerciseName, getExerciseName )
 import GHC.Core.Opt.Monad (CoreToDo (..), getRuleBase, CoreM, SimplMode (sm_pre_inline))
@@ -102,7 +105,7 @@ import GHC.Iface.Ext.Utils (getNameScope)
 import GHC.Core.Opt.Simplify.Env (getSimplRules)
 import GHC.Driver.Plugins
 import MyPlugin (plugin, install)
-import GHC.Plugins (mkModuleNameFS, ModGuts (ModGuts), Unique, mkLocalVar, IdDetails (VanillaId), mkInternalName, mkOccName, mkGeneralSrcSpan, vanillaIdInfo, mkInScopeSet, mkUniqSet, MonadUnique (getUniqueM), setVarType, extendInScopeSet, unsafeGetFreshLocalUnique, moduleEnvElts, InScopeSet, getInScopeVars, getUniqSet, eltsUFM, mkGlobalVar, isFunTy, Uniquable (getUnique), idInfo, exprType)
+import GHC.Plugins (mkModuleNameFS, ModGuts (ModGuts, mg_warns), Unique, mkLocalVar, IdDetails (VanillaId), mkInternalName, mkOccName, mkGeneralSrcSpan, vanillaIdInfo, mkInScopeSet, mkUniqSet, MonadUnique (getUniqueM), setVarType, extendInScopeSet, unsafeGetFreshLocalUnique, moduleEnvElts, InScopeSet, getInScopeVars, getUniqSet, eltsUFM, mkGlobalVar, isFunTy, Uniquable (getUnique), idInfo, exprType, srcErrorMessages, runSDoc, handleGhcException, showException, SrcSpan, SDoc, docToSDoc)
 import Control.Monad.Trans.State (StateT (runStateT), get, put, evalStateT)
 import qualified GHC.Types.Name.Occurrence as Occ
 import Data.Generics.Uniplate.Data
@@ -110,9 +113,20 @@ import Control.Monad.Trans.Class (lift)
 import Data.Maybe (fromJust)
 import GHC.Runtime.Context (extendInteractiveContextWithIds, icInScopeTTs)
 import Data.Data (Data)
-import Data.IORef (readIORef)
+import Data.IORef (readIORef, IORef, modifyIORef', newIORef, modifyIORef)
 import GHC.Types.Name.Cache (NameCache(..))
 import GHC.Core.Unfold (UnfoldingOpts(..))
+import Control.Monad.Catch as MC ( MonadCatch(catch), SomeException (SomeException), handle, finally )
+import TypeCheckW (hscTypecheckAndGetWarnings)
+import Data.Set
+import GHC.IO (catchException, catchAny)
+import GHC.Driver.Errors (handleFlagWarnings)
+import GHC.Utils.Exception (ExceptionMonad)
+import GHC.Utils.Logger (LogAction)
+import Data.Function (on)
+import Data.List (nubBy, nub)
+import qualified GHC.Utils.Ppr as Pretty
+
 
   {-
   GeneralFlag's regarding hole fits 
@@ -146,36 +160,48 @@ holeFlags =
 simplFlags :: [GeneralFlag]
 -- | Set flags for simplification pass  
 simplFlags = [
-             Opt_LiberateCase
-            ,Opt_CaseFolding
-            -- ,Opt_DoLambdaEtaExpansion
+             --Opt_LiberateCase
+            --,Opt_CaseFolding
+            --Opt_DoLambdaEtaExpansion
             -- ,Opt_Specialise
-            ,Opt_CaseMerge
-            ,Opt_EnableRewriteRules
+            --,Opt_CaseMerge
+            --,Opt_DoEtaReduction
+            Opt_EnableRewriteRules
              ]
 
 genFlags :: [GeneralFlag]
-genFlags = [Opt_DeferTypedHoles
-           ,Opt_DoEtaReduction
+genFlags = [
+           -- Opt_WarnIsError  -- turn all warnings into errors 
+            Opt_DeferTypedHoles
+           ,Opt_DeferTypeErrors
            ,Opt_DoCoreLinting
+           ,Opt_DeferDiagnostics
            ]
 
-warnFlags :: [WarningFlag]
-warnFlags = [Opt_WarnUnrecognisedPragmas
-             ,Opt_WarnTypedHoles]
+setWarnFlags :: [WarningFlag]
+setWarnFlags = [Opt_WarnOverlappingPatterns
+                ,Opt_WarnIncompletePatterns
+                ,Opt_WarnInaccessibleCode
+                ,Opt_WarnRedundantConstraints]
+
+unSetWarnFlags :: [WarningFlag]
+unSetWarnFlags = [Opt_WarnUnrecognisedPragmas
+                 ,Opt_WarnTypedHoles
+                 ,Opt_WarnInlineRuleShadowing
+                 ]
 
 setFlags :: Bool -> [GeneralFlag] -> Ghc DynFlags
 setFlags b flags = do
-   dflags <- getSessionDynFlags
-   let dflags' = gopt_unset (gopt_unset dflags Opt_KeepHiFiles) Opt_KeepOFiles
-   let gflags' = if b then EnumSet.toList (generalFlags dflags') ++ flags else flags
-       dflags1  = dflags' {refLevelHoleFits = Just 2,
+   df <- getSessionDynFlags
+   let dflags = Prelude.foldl gopt_unset df [Opt_KeepHiFiles, Opt_KeepOFiles]
+       dflags' = Prelude.foldl wopt_unset dflags unSetWarnFlags
+       gflags' = if b then EnumSet.toList (generalFlags dflags') ++ flags else flags
+       dflags1 = dflags' {refLevelHoleFits = Just 2,
                           maxValidHoleFits = Just 8,
                           maxRefHoleFits   = Just 10,
                           generalFlags = EnumSet.fromList gflags'}
-       dflags2 = wopt_unset dflags1 Opt_WarnUnrecognisedPragmas
-       dflags3 = wopt_unset dflags2 Opt_WarnTypedHoles
-   return dflags3
+       dflags2 = Prelude.foldl wopt_set dflags1 setWarnFlags
+   return dflags2
 
 
 compToFile :: (FilePath -> IO CoreProgram) -> FilePath -> IO ()
@@ -195,6 +221,8 @@ typeCheckCore coreprog env = do
    liftIO $ lintPassResult env coretodo (coreprog)
 
 
+
+
 compCoreSt :: Bool -> FilePath -> Ghc (CoreProgram, HscEnv)
 -- | Compile to desugaring pass 
 compCoreSt b fp = do
@@ -205,32 +233,69 @@ compCoreSt b fp = do
   env' <- getSession
   return (cm_binds coremod, env')
 
-compSimpl :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)
+
+data Warning = W WarnReason Severity SrcSpan SDoc
+  deriving Show 
+
+instance Eq WarnReason where
+  (Reason flag) == (Reason flag') = flag == flag'
+  (ErrReason f) == (ErrReason f') = f == f'
+  NoReason == NoReason = True
+  _ == _               = False
+
+instance Ord Warning where 
+  (W _ s _ _) > (W _ s' _ _) = s > s' 
+  (W _ s _ _) < (W _ s' _ _) = s < s' 
+
+instance Eq Warning where 
+  W r s sp doc == W r' s' sp' doc' = r == r' && sp == sp' -- for checking the same program, comparing warnings from model/student requires other handling
+
+instance Ord Severity where 
+  SevFatal > _   = True 
+  SevError > x   = x /= SevFatal 
+  SevWarning > x = x /= SevError 
+  
+
+
+writeWarnings :: IORef [Warning] -> LogAction -> LogAction
+writeWarnings ref action dflags reason sev span doc = do
+  modifyIORef ref (W reason sev span doc:)
+  action dflags reason sev span (docToSDoc Pretty.empty) -- dont print msg again 
+
+
+compSimpl :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv, [Warning])
 -- | Compile coreprogram, after simplifier pass 
 --   True to use the default optimisation flags 
-compSimpl name fp = runGhc (Just libdir) $ do
-  env <- getSession 
+compSimpl name fp = defaultErrorHandler defaultFatalMessager defaultFlushOut $ runGhc (Just libdir) $ do
+  env <- getSession
   dflags <- setFlags True (holeFlags ++ genFlags ++ simplFlags) -- set dynflags 
-  setSessionDynFlags dflags 
+  setSessionDynFlags dflags
+  ref <- liftIO (newIORef [])
+  pushLogHookM (writeWarnings ref)
   target <- guessTarget fp Nothing
   setTargets [target]
   load LoadAllTargets
-  modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
-  pmod <- parseModule modSum 
-  tmod <- typecheckModule pmod 
-  dmod <- desugarModule tmod  
-  let coremod = coreModule dmod 
+  modSum <- getModSummary $ mkModuleName (takeBaseName fp)
+  pmod <- parseModule modSum
+  tmod <-  typecheckModule pmod
+  dmod <- desugarModule tmod
+  let coremod = coreModule dmod
       p = removeModInfo (mg_binds coremod)
-  p1 <- repHoles p 
+  p1 <- repHoles p
   env <- getSession
   p2 <- liftIO $ core2core env (coremod {mg_binds = p1})
-  let p3 = (etaReduce . removeRedEqCheck) (mg_binds p2) 
-  p4 <- inlineBinds p3 
-  let p5 = (alpha name) p4
-      prog = removeTyEvidence p5
-  env <- getSession 
-  return (prog, env)
+  let p3 = mg_binds p2 
+  p4 <- inlineBinds p3
+  let p5 = (alpha name . replaceCaseBinds . etaReduce . removeRedEqCheck) p4 
+  let prog = removeTyEvidence
+             p5 
+  env <- getSession
+  ws <- liftIO (readIORef ref)
+  return (prog, env, nub ws)
 
+
+thd3 :: (a, b, c) -> c
+thd3 (_, _, z) = z
 
 compCore :: FilePath -> IO (CoreProgram, HscEnv)
 -- | Compile a Core program and apply transformations
@@ -271,15 +336,15 @@ compNorm :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)
 compNorm fname fp = runGhc (Just libdir) $ do
     (p',e) <- compCoreSt False fp
     let p = removeModInfo p'
-    p1 <- repHoles p 
+    p1 <- repHoles p
     p2 <- inlineBinds p1
-    --p3 <- recToLetRec p2 
-    p4 <- etaExpP p2 
+    p3 <- recToLetRec p2 
+    --p4 <- etaExpP p3
     let
-        p5 = (alpha fname . etaReduce . replacePatErrorLits . removeRedEqCheck) p4 
-        prog = removeTyEvidence 
+        p5 = (alpha fname . etaReduce . removeRedEqCheck) p3
+        prog = removeTyEvidence
                p5
-    env <- getSession 
+    env <- getSession
     return (prog,env)
 
 compFloat :: FilePath -> IO (CoreProgram, HscEnv)
@@ -310,10 +375,14 @@ compF fp = do
 
 compS :: ExerciseName -> FilePath -> IO CoreProgram
 compS fname fp = do
-  (p,_) <- compSimpl fname fp
+  (p,_,_) <- compSimpl fname fp
   return p
 
 
+compRen :: ExerciseName -> FilePath -> IO CoreProgram
+compRen n fp = do
+  (p,_) <- compCore fp 
+  return (alpha n . removeModInfo $ p)
 
 -- Functions to compile wiht plugins 
 compWithPlugins :: FilePath -> IO CoreProgram
@@ -360,12 +429,13 @@ loadWithPlugins t the_plugins = do
       load LoadAllTargets
 
 compPureS :: ExerciseName -> FilePath -> IO CoreProgram
-compPureS _ fp = runGhc (Just libdir) $ do
+compPureS n fp = runGhc (Just libdir) $ do
   env <- getSession
   dflags <- setFlags True (holeFlags ++ genFlags ++ simplFlags)
   setSessionDynFlags dflags
   mod <- compileToCoreSimplified fp
-  return (cm_binds mod)
+  let prog = alpha n (removeModInfo (cm_binds mod))
+  return (prog)
 -- old functions
 -- =========================================
 compToTc :: FilePath -> IO TypecheckedSource
