@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# HLINT ignore "Use <&>" #-}
+{-# LANGUAGE LambdaCase #-}
 module Test where
 
 import GHC.Core (CoreProgram)
@@ -16,9 +17,8 @@ import Compile
       compSimpl,
       compC,
       compN,
-      compF,
       compS )
-import Data.Ord 
+import Data.Ord
 import Transform
 import Similar
 import Utils
@@ -31,6 +31,7 @@ import Data.List (isSuffixOf, isPrefixOf, sortOn)
 import Data.Char (isDigit)
 import Control.Lens (rewrite)
 import Test.QuickCheck (ASCIIString(getASCIIString))
+import Data.List ((\\))
 
 import System.IO
 import System.IO.Temp
@@ -41,29 +42,9 @@ import Control.Monad (when, unless)
 import Diff ((~~))
 import Analyse (hasRedundantPattern)
 import GHC.Driver.Session (programName, WarningFlag (..), WarnReason (..))
-import GHC.Plugins (fstOf3, showSDoc)
+import GHC.Plugins (fstOf3, showSDoc, thdOf3)
 
-
-data Mode = DEBUG -- print which pair of files compared, and the result 
-          | RES   -- print only the result of all good/bad/norm tests 
-
-
-test :: Mode -> ExerciseName -> IO ()
--- | Main test-function,
--- takes the name of the exercise as a string 
--- requires that folder with exercise name exist, with subfolders good, bad and norm. 
-test m n = do
-  let tf = case m of
-          DEBUG -> testPr
-          RES   -> testPrA
-  succTests n >>= \f -> banner "Expected succesful match: "
-              >> tf n f
-  failTests n >>= \f -> banner "Expected failure: "
-              >> tf n f
-  normaliseTests n >>= \f -> banner "Expected match with normalisation: "
-              >> tf n f
-
-testAll :: (ExerciseName -> FilePath -> IO CoreProgram) -> IO ()
+testAll :: (ExerciseName -> FilePath -> IO (CoreProgram, HscEnv, [Warning])) -> IO ()
 -- | Test and output number of matched tests
 testAll compilefun = do
   exercises <- listDirectory path
@@ -79,7 +60,7 @@ testAll compilefun = do
       totfail = length (concat ft)
       totnorm = length (concat nt)
       success = length (filter id sr)
-      fail    = length (filter not fr)
+      fail    = length (filter id fr)
       norm    = length (filter id nr)
   putStrLn $ showRes success totsucc "success"
   putStrLn $ showRes fail totfail "fail"
@@ -109,52 +90,19 @@ testTcAll f = do
 tcCore :: (CoreProgram, HscEnv) -> IO ()
 tcCore = uncurry typeCheckCore
 
-testPr :: ExerciseName -> [(FilePath,FilePath)] -> IO ()
--- | Test and print test by test 
-testPr _ [] = return ()
-testPr n (t:ts) = testPr' n t >> testPr n ts
-  where testPr' n ps@(p1,p2) = do
-          putStrLn $ "Comparing programs " ++ show p1 `sp` show p2
-          putStrLn "Desugar:"
-          putStr "programs match: " >> compare_desugar ps >>= print
-          putStrLn  "Simplifier:"
-          putStr "programs match: " >> compare_simpl ps >>= print
-          putStrLn  "Manual transformations:"
-          putStr "programs match: " >> compare_norm ps >>= print
-
-testPrA :: ExerciseName -> [(FilePath,FilePath)] -> IO ()
--- | Test and print all  
-testPrA n ps = do
-  putStrLn "Desugar:"
-  putStr "programs match" >> mapM compare_desugar ps >>= print
-  putStrLn  "Simplifier:"
-  putStr "programs match" >> mapM compare_simpl ps >>= print
-  putStrLn  "Manual transformations:"
-  putStr "programs match" >> mapM compare_norm ps >>= print
 
 
-compare_pr :: (FilePath -> IO CoreProgram) -> Bool -> FilePath -> FilePath -> IO Bool
+compare_pr :: (FilePath -> IO (CoreProgram, HscEnv, [Warning])) -> Bool -> FilePath -> FilePath -> IO Bool
 compare_pr compile b fp1 fp2 = do
-  model <- compile fp1
-  student <- compile fp2
-  let res = student ~> model 
-  when (not res && b) $ print $ "failed: " ++ fp1
-  return res
-
-
-compare_ :: (FilePath -> IO CoreProgram) -> FilePath -> FilePath -> IO Bool
-compare_ comp_pass fp1 fp2 = do
-  model <- comp_pass fp1
-  student <- comp_pass fp2
-  return $ student ~> model
-
-
-compare_desugar, compare_simpl, compare_norm, compare_float :: (FilePath,FilePath) -> IO Bool
-compare_desugar = uncurry $ compare_ compC
-compare_simpl (p1,p2) = compare_ (compS (getExerciseName p1)) p1 p2
-compare_norm (p1,p2) = compare_ (compN (getExerciseName p1)) p1 p2
-compare_float   = uncurry $ compare_ compF
-
+  (model,_,mw) <- compile fp1
+  (student,_,sw) <- compile fp2
+  let mw_reason = map reason mw
+      sw_reason = map reason sw
+  let res = student ~> model
+      match = student ~= model
+  when (not res && b) $ putStrLn $ "failed to match : " ++ show fp1 `nl` show (getFeedback sw)
+  let feedback = mkFeedback match res sw 
+  return (isMatch feedback == b) -- feedback matches expected result
 
 
 matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
@@ -237,7 +185,7 @@ msPath = "./modelsolutions/"
 testItems :: (ExerciseName -> FilePath -> IO CoreProgram) -> FilePath -> IO ()
 testItems c jsonfile = do
   items <- decodeJson jsonfile
-  results <- mapM (testItem c) items 
+  results <- mapM (testItem c) items
   let exps = filter (\(x,y,z) -> (x,y,z)==(True,True,z)) results -- same results as in Ask-Elle 
       expf = filter (\(x,y,z) -> (x,y,z)==(False,False,z)) results
       succ = filter (\(x,y,z) -> (x,y,z)==(False,True,z)) results
@@ -245,7 +193,7 @@ testItems c jsonfile = do
       nboftest = f items
       f = show . length
   putStrLn "printing failed attempts:"
-  mapM_ (\(_,_,prog) -> printProg prog) fail 
+  mapM_ (\(_,_,prog) -> printProg prog) fail
   putStrLn "printing expected failed attempts:"
   mapM_ (\(_,_,prog) -> printProg prog) expf
   putStrLn $ f exps ++ "/" ++ nboftest ++ " tests gave same successful result as Ask-Elle"
@@ -265,7 +213,7 @@ testItem f ti = do
     mProgs <- mapM (f exercisename) modelFiles
     let pred = any (stProg ~>) mProgs  -- is predecessor to any of the model solutions
         match = any (stProg ~=) mProgs -- is similar to any of the model solutions
-        res =  pred || match 
+        res =  pred || match
     --print res 
     --printRedundantPat ti stProg (zip mProgs modelFiles)
     case category ti of
@@ -274,8 +222,8 @@ testItem f ti = do
         "Missing"    -> return (False,res,input ti)  -- missing cases (not defined on all input)
         "TestPassed" -> return (False,res,input ti)  -- quickcheck tests passed, but could not be matched 
         "Unknown"    -> return (False,res,input ti)  -- unknown
-  
-  
+
+
 
 -- | take an exercise name and a path to the file, 
 --   compare it with its model solutions
@@ -315,7 +263,7 @@ tempHeader = "module Temp where\n"
 writeProg :: TestItem -> IO ()
 writeProg ti = do
     rules <- readFile "Rules.hs"
-    let inputstr = tempHeader ++ typesig ti `nl` input ti `nl` rules 
+    let inputstr = tempHeader ++ typesig ti `nl` input ti `nl` rules
     -- Write the inputstr to the temporary file
     handle <- openFile "studentfiles/Temp.hs" WriteMode
     hPutStrLn handle inputstr
@@ -326,77 +274,111 @@ writeInput :: String -> IO ()
 writeInput input = do
     rules <- readFile "Rules.hs"
     -- must insert type signature in a better way later, if not defined by student 
-    let inputstr = tempHeader `nl` input `nl` rules 
+    let inputstr = tempHeader `nl` input `nl` rules
     -- Write the inputstr to the temporary file
     handle <- openFile "studentfiles/Temp.hs" WriteMode
     hPutStrLn handle inputstr
     hFlush handle
     hClose handle
 
-data Feedback = IncompletePat String 
-              | OverlappingPat String 
+data Feedback = IncompletePat String
+              | OverlappingPat String
               | Complete
-              | Error String  
-              | NoWarns   
-              | Ontrack Feedback 
-              | General String 
-              | Unknown Feedback
+              | Error String
+              | NoWarns
+              | Ontrack Feedback
+              | General String
+              | HoleSuggestions String
               | Many [Feedback]
 
-instance Show Feedback where 
-  show Complete           = "You've finished the exercise"
-  show NoWarns            = ""   
-  show (IncompletePat s)  = "You have an incomplete pattern:\n" ++ s 
-  show (OverlappingPat s) = "You have an overlapping pattern:\n" ++ s 
-  show (Error s)          = "Detected an error " ++ s 
-  show (Ontrack f)        = "Solution is on track\n" ++ show f 
-  show (Unknown f)        = "Unknown: " ++ show f 
-  show (Many fs)          = concatMap show fs 
-  show (General s)        = s 
+instance Eq Feedback where
+  Complete == Complete                     = True
+  NoWarns == NoWarns                       = True
+  (IncompletePat _) == (IncompletePat _)   = True
+  (OverlappingPat _) == (OverlappingPat _) = True
+  _ == _                                   = False
 
-analyseItems :: FilePath -> IO () 
-analyseItems jsonfile = do 
+
+instance Show Feedback where
+  show Complete            = "You've finished the exercise"
+  show NoWarns             = ""
+  show (IncompletePat s)   = "You have an incomplete pattern:\n" ++ s
+  show (OverlappingPat s)  = "You have an overlapping pattern:\n" ++ s
+  show (Error s)           = "Detected an error " ++ s
+  show (Ontrack f)         = "Solution is on track\n" ++ show f
+  show (Many fs)           = concatMap show fs
+  show (HoleSuggestions s) = "Holes could be replaced by:\n" ++ show s
+  show (General s)         = s
+
+analyseItems :: FilePath -> IO ()
+analyseItems jsonfile = do
   items <- decodeJson jsonfile
-  mapM_ analyse' items 
+  results <- mapM analyse' items
+  let match = length $ filter isMatch results
+      ontrack = length $ filter isOnTrack results
+      tot = length items
+  putStrLn $ show match ++ "/" ++ show tot ++ " matched."
+  putStrLn $ show ontrack ++ "/" ++ show tot ++ " is on track."
 
-analyse' :: TestItem -> IO () 
-analyse' ti = do 
-  writeProg ti 
+analyse' :: TestItem -> IO Feedback
+analyse' ti = do
+  writeProg ti
   let exercisename = takeBaseName (exerciseid ti)
   (stProg,e,warns) <- compSimpl exercisename "./studentfiles/Temp.hs"  -- student progrm
   modelFiles <- getFilePaths (msPath ++ (exerciseid ti))
-  mProgs <- mapM (compSimpl exercisename) modelFiles 
+  mProgs <- mapM (compSimpl exercisename) modelFiles
   let pred = any ((stProg ~>) . fstOf3) mProgs  -- is predecessor to any of the model solutions
       match = any ((stProg ~=) . fstOf3) mProgs -- is similar to any of the model solutions
-  if match then print Complete 
-           else let feedback = feedBackFromWarnings warns  
-                in if pred then print $ Ontrack feedback 
-                                    else print (Unknown feedback) >>  putStrLn (input ti)
+      feedback = mkFeedback match pred warns 
+  return feedback
 
-analyse :: String -> ExerciseName -> IO Feedback 
-analyse input exercise = do 
+
+analyse :: String -> ExerciseName -> IO Feedback
+analyse input exercise = do
   writeInput input
-  let exercisename = takeBaseName exercise 
+  let exercisename = takeBaseName exercise
   (stProg,e,warns) <- compSimpl exercisename "./studentfiles/Temp.hs"  -- student progrm
   modelFiles <- getFilePaths (msPath ++ exercise)
-  mProgs <- mapM (compSimpl exercisename) modelFiles 
+  mProgs <- mapM (compSimpl exercisename) modelFiles
   let pred = any ((stProg ~>) . fstOf3) mProgs  -- is predecessor to any of the model solutions
       match = any ((stProg ~=) . fstOf3) mProgs -- is similar to any of the model solutions
-  if match then return Complete
-           else let feedback = feedBackFromWarnings warns  
-                in return $ if pred then Ontrack feedback 
-                                    else Unknown feedback   
-                 
+  return $ mkFeedback match pred warns
+
+getFeedback :: [Warning] -> Feedback
+getFeedback [] = NoWarns
+getFeedback ws = Many $ map getwarnings ws 
+  where getwarnings w = case w of
+          (GhcWarn (Reason Opt_WarnIncompletePatterns) _ _ doc)  -> IncompletePat (showSDocUnsafe doc)
+          (GhcWarn (Reason Opt_WarnOverlappingPatterns) _ _ doc) -> OverlappingPat (showSDocUnsafe doc)
+          (GhcWarn (ErrReason e) _ _ doc)                        -> Error (showSDocUnsafe doc)
+          (GhcWarn (Reason Opt_WarnTypedHoles) _ _ doc)          -> HoleSuggestions (showSDocUnsafe doc) 
+          (GhcWarn _ _ _ doc)                                    -> General (showSDocUnsafe doc)
+          
 
 
-feedBackFromWarnings :: [Warning] -> Feedback
-feedBackFromWarnings [] = NoWarns 
-feedBackFromWarnings ws = Many $ map getFeedback ws 
-  where getFeedback w = case w of 
-          (W (Reason Opt_WarnIncompletePatterns) _ _ doc) -> IncompletePat (showSDocUnsafe doc)
-          (W (Reason Opt_WarnOverlappingPatterns) _ _ doc) -> OverlappingPat (showSDocUnsafe doc)
-          (W (ErrReason e) _ _ doc) -> Error (showSDocUnsafe doc)
-          (W _ _ _ doc) -> General (showSDocUnsafe doc)
-        
+mkFeedback :: Bool -> Bool -> [Warning] -> Feedback
+mkFeedback match pred warn | match = Complete
+                           | pred && Reason Opt_WarnOverlappingPatterns `notElem` warnreason = Ontrack (getFeedback warn)
+                           | otherwise = getFeedback warn 
+  where warnreason = map reason warn
 
+isMatch :: Feedback -> Bool
+isMatch = \case
+  Complete  -> True
+  _         -> False
 
+isOnTrack :: Feedback -> Bool
+isOnTrack = \case
+  Ontrack _ -> True
+  _         -> False
+
+isMissingCases :: Feedback -> Bool
+isMissingCases = \case
+   Many f          -> IncompletePat "" `elem` f
+   IncompletePat _ -> True
+   _               -> False
+
+isOverLapping :: Feedback -> Bool
+isOverLapping =  \case
+  OverlappingPat _ -> True
+  _                -> False

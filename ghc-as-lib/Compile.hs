@@ -96,7 +96,7 @@ import Control.Monad (when, unless)
 
 import Similar
 import Instance
-import Transform (etaReduce, alpha, removeModInfo, repHoles, etaExpP, recToLetRec, inlineBinds, floatOut, replacePatErrorLits, removeRedEqCheck, removeTyEvidence, recToLetRec, floatOutLets, addDefaultCase, replaceCaseBinds, aRename)
+import Transform (etaReduce, alpha, removeModInfo, repHoles, etaExpP, recToLetRec, inlineBinds, floatOut, replacePatErrorLits, removeRedEqCheck, removeTyEvidence, recToLetRec, floatOutLets, addDefaultCase, replaceCaseBinds, aRename, inlineRedLets)
 import Utils
     ( banner, findLiterals, printHoleLoc, showGhc, ExerciseName, getExerciseName )
 import GHC.Core.Opt.Monad (CoreToDo (..), getRuleBase, CoreM, SimplMode (sm_pre_inline))
@@ -162,7 +162,7 @@ simplFlags :: [GeneralFlag]
 simplFlags = [
              --Opt_LiberateCase
             --,Opt_CaseFolding
-            --Opt_DoLambdaEtaExpansion
+            Opt_DoLambdaEtaExpansion,
             -- ,Opt_Specialise
             --,Opt_CaseMerge
             --,Opt_DoEtaReduction
@@ -226,6 +226,8 @@ typeCheckCore coreprog env = do
 compCoreSt :: Bool -> FilePath -> Ghc (CoreProgram, HscEnv)
 -- | Compile to desugaring pass 
 compCoreSt b fp = do
+  ref <- liftIO (newIORef [])
+  pushLogHookM (writeWarnings ref)
   env <- getSession
   dflags <- setFlags b (holeFlags ++ genFlags)
   setSessionDynFlags (gopt_set dflags Opt_DoCoreLinting)
@@ -234,7 +236,10 @@ compCoreSt b fp = do
   return (cm_binds coremod, env')
 
 
-data Warning = W WarnReason Severity SrcSpan SDoc
+data Warning = GhcWarn {reason :: WarnReason,
+                        sev :: Severity,
+                        span :: SrcSpan,
+                        doc :: SDoc}
   deriving Show 
 
 instance Eq WarnReason where
@@ -243,12 +248,8 @@ instance Eq WarnReason where
   NoReason == NoReason = True
   _ == _               = False
 
-instance Ord Warning where 
-  (W _ s _ _) > (W _ s' _ _) = s > s' 
-  (W _ s _ _) < (W _ s' _ _) = s < s' 
-
 instance Eq Warning where 
-  W r s sp doc == W r' s' sp' doc' = r == r' && sp == sp' -- for checking the same program, comparing warnings from model/student requires other handling
+  GhcWarn r s sp doc == GhcWarn r' s' sp' doc' = r == r' && sp == sp' -- for checking the same program, comparing warnings from model/student requires other handling
 
 instance Ord Severity where 
   SevFatal > _   = True 
@@ -259,8 +260,8 @@ instance Ord Severity where
 
 writeWarnings :: IORef [Warning] -> LogAction -> LogAction
 writeWarnings ref action dflags reason sev span doc = do
-  modifyIORef ref (W reason sev span doc:)
-  action dflags reason sev span (docToSDoc Pretty.empty) -- dont print msg again 
+  modifyIORef ref (GhcWarn reason sev span doc:)
+  action dflags reason sev span doc --(docToSDoc Pretty.empty) -- dont print msg again 
 
 
 compSimpl :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv, [Warning])
@@ -281,21 +282,20 @@ compSimpl name fp = defaultErrorHandler defaultFatalMessager defaultFlushOut $ r
   dmod <- desugarModule tmod
   let coremod = coreModule dmod
       p = removeModInfo (mg_binds coremod)
-  p1 <- repHoles p
+      p1 = repHoles p
   env <- getSession
   p2 <- liftIO $ core2core env (coremod {mg_binds = p1})
   let p3 = mg_binds p2 
   p4 <- inlineBinds p3
-  let p5 = (alpha name . replaceCaseBinds . etaReduce . removeRedEqCheck) p4 
-  let prog = removeTyEvidence
-             p5 
+  p5 <- recToLetRec p4 
+  let p6 = (etaReduce . replaceCaseBinds . removeRedEqCheck) p5
+  let prog = alpha name $
+             --removeTyEvidence
+             p6 
   env <- getSession
   ws <- liftIO (readIORef ref)
   return (prog, env, nub ws)
 
-
-thd3 :: (a, b, c) -> c
-thd3 (_, _, z) = z
 
 compCore :: FilePath -> IO (CoreProgram, HscEnv)
 -- | Compile a Core program and apply transformations
@@ -331,21 +331,23 @@ compNorm fname fp = runGhc (Just libdir) $ do
                p5
         env = e2
     return (prog,env) -}
-compNorm :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)
+compNorm :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv, [Warning])
 -- | Compile a Core program and apply transformations
 compNorm fname fp = runGhc (Just libdir) $ do
+    ref <- liftIO (newIORef [])
+    pushLogHookM (writeWarnings ref)
     (p',e) <- compCoreSt False fp
     let p = removeModInfo p'
-    p1 <- repHoles p
+        p1 = repHoles p
     p2 <- inlineBinds p1
     p3 <- recToLetRec p2 
-    --p4 <- etaExpP p3
     let
-        p5 = (alpha fname . etaReduce . removeRedEqCheck) p3
+        p5 = (alpha fname . etaReduce . replaceCaseBinds . removeRedEqCheck) p3
         prog = removeTyEvidence
                p5
     env <- getSession
-    return (prog,env)
+    warns <- liftIO $ readIORef ref 
+    return (prog,env,nub warns)
 
 compFloat :: FilePath -> IO (CoreProgram, HscEnv)
 -- | Compile a Core program and apply float transformations
@@ -363,26 +365,19 @@ compC :: FilePath -> IO CoreProgram
 -- | Compile to coreprogram, after desugaring pass, before simplifier 
 compC fp = runGhc (Just libdir) $ compCoreSt False fp  >>= \(p,_) -> return p
 
-compN :: ExerciseName -> FilePath -> IO CoreProgram
+compN :: ExerciseName -> FilePath -> IO (CoreProgram,HscEnv)
 compN n fp = do
-  (p,_) <- compNorm n fp
-  return p
+  (p,e,_) <- compNorm n fp
+  return (p,e)
 
-compF :: FilePath -> IO CoreProgram
-compF fp = do
-  (p,_) <- compFloat fp
-  return p
+compSt :: ExerciseName -> FilePath -> IO CoreProgram
+compSt fn fp = compSimpl fn fp >>= (\(x,_,_) -> return x)
 
-compS :: ExerciseName -> FilePath -> IO CoreProgram
+compS :: ExerciseName -> FilePath -> IO (CoreProgram,HscEnv)
 compS fname fp = do
-  (p,_,_) <- compSimpl fname fp
-  return p
+  (p,e,_) <- compSimpl fname fp
+  return (p,e)
 
-
-compRen :: ExerciseName -> FilePath -> IO CoreProgram
-compRen n fp = do
-  (p,_) <- compCore fp 
-  return (alpha n . removeModInfo $ p)
 
 -- Functions to compile wiht plugins 
 compWithPlugins :: FilePath -> IO CoreProgram
@@ -428,14 +423,23 @@ loadWithPlugins t the_plugins = do
       setSessionDynFlags dflags { outputFile_ = Nothing }
       load LoadAllTargets
 
-compPureS :: ExerciseName -> FilePath -> IO CoreProgram
+compPureS :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv, [Warning])
 compPureS n fp = runGhc (Just libdir) $ do
   env <- getSession
   dflags <- setFlags True (holeFlags ++ genFlags ++ simplFlags)
   setSessionDynFlags dflags
   mod <- compileToCoreSimplified fp
   let prog = alpha n (removeModInfo (cm_binds mod))
-  return (prog)
+  return (prog,env,[])
+
+compPureC :: ExerciseName -> FilePath -> IO (CoreProgram, HscEnv, [Warning])
+compPureC n fp = do 
+  (p,e) <- compCore fp 
+  let prog = alpha n (removeModInfo p)
+  return (prog,e,[])
+
+
+
 -- old functions
 -- =========================================
 compToTc :: FilePath -> IO TypecheckedSource

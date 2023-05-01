@@ -67,7 +67,8 @@ instance Similar (Expr Var) where
     e            ~> (Case e' v t as)       = any ((e ~>) . getAltExp) as 
     (Cast e co)  ~> (Cast e' co')          = co ~> co' && e ~> e'
     (Let b e)    ~> (Let b' e')            = b  ~> b' && e ~> e'
-    e            ~> (Let b' e')            = e ~> e' 
+    e            ~> (Let (NonRec b e') ine) = e ~> e' 
+    e            ~> (Let (Rec es) ine)     = any ((e ~>) . snd) es 
     (Coercion c) ~> (Coercion c')          = c  ~> c'
     x ~> y                                 = isHoleVarExpr x || isHoleExpr x 
 

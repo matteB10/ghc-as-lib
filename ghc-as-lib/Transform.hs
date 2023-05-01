@@ -63,8 +63,8 @@ import GHC.Core.Lint (interactiveInScope)
 import GHC.Runtime.Context (extendInteractiveContextWithIds)
 
 
-import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError, getVarFromName, isEvOrTyVar, isEvOrTyExp, isTy, ins, insB, subst, subE )
-import Similar ( Similar((~=)) )
+import Utils ( isHoleVar, isVarMod, varNameUnique, isHoleExpr, getTypErr, getPatErr, isPatError, getVarFromName, isEvOrTyVar, isEvOrTyExp, isTy, ins, insB, subst, subE, isVar, getHoleMsg )
+import Similar ( Similar((~=)), isCommutative )
 import Data.Type.Equality (apply)
 import Instance ( BiplateFor )
 import qualified Data.Map as M
@@ -82,13 +82,6 @@ import GHC.Builtin.Uniques (mkBuiltinUnique)
 import Analyse (hasCase)
 
 
-data St = St {
-         env  :: Map.Map Var Var
-        ,freshNum  :: Int
-        ,exerName  :: String
-        }
-
-type Ctx a = State St a
 
 -- \eta -> let f = ... in f eta 
 removeModInfo :: CoreProgram -> CoreProgram
@@ -104,25 +97,19 @@ etaReduce = rewriteBi etaRed
 
 etaRed :: CoreExpr ->  Maybe CoreExpr
 -- | eta reduction, e.g., \x -> f x => f
-etaRed (Lam v (App f args)) =
-   case args of
-      Var v' | v == v'
-              ,not (isTyVar v)
-              ,not (isLinearType (exprType f)) -- don't eta-reduce eta-expanded data constructors (with linear types)
-              ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
-              ,not (isEvVar v)   -- don't remove evidence variables 
-               -> return f
-      _      -> Nothing
-etaRed (Lam v (Let b (App f args))) =
-   case args of
-      Var v' | v == v'
-              ,not (isTyVar v)
-              ,not (isLinearType (exprType f)) -- don't eta-reduce eta-expanded data constructors (with linear types)
-              ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
-              ,not (isEvVar v)   -- don't remove evidence variables 
-               -> return (Let b f)
-      _      -> Nothing
+etaRed (Lam v (App f args))         | isEtaReducable f args v = return f
+etaRed (Lam v (Let b (App f args))) | isEtaReducable f args v = return (Let b f)
 etaRed _ = Nothing
+
+isEtaReducable :: CoreExpr -> CoreExpr -> Var -> Bool
+isEtaReducable f arg v = case arg of
+            Var v' | v == v'
+              ,not (isTyVar v)
+              ,not (isLinearType (exprType f)) -- don't eta-reduce eta-expanded data constructors (with linear types)
+              ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
+              ,not (isEvVar v)   -- don't remove evidence variables 
+              -> True
+            _ -> False
 
 
 isDataConApp :: CoreExpr -> Bool
@@ -161,17 +148,14 @@ etaExpP p = do
     return $ goB dflags p
     where goB :: DynFlags -> CoreProgram -> CoreProgram
           goB df = transformBi $ \bi -> case bi :: CoreBind of
-                b@(NonRec v e) | wantEtaExpB df v e -> NonRec v (eta e df)
-                               | otherwise          -> --trace ("arity of " ++ show v `sp` show (arityTypeArity $ findRhsArity df v e (exprArity e)))
-                                                       b
+                b@(NonRec v e) -> NonRec v (eta e df)
                 b@(Rec es) -> Rec (etaExp df es)
 --
           eta expr df = let arit = exprEtaExpandArity df expr
                         in etaExpandAT arit expr
           etaExp df [] = []
-          etaExp df ((v,e):es) | wantEtaExpansion df e = (v,eta e df):etaExp df es 
-                               | otherwise = (v,e):etaExp df es 
-          
+          etaExp df ((v,e):es) = (v,eta e df):etaExp df es
+
 
 
 
@@ -198,32 +182,19 @@ wantEtaExpB df v e = id_arity > 0
     where id_arity = arityTypeArity $ findRhsArity df v e ex_arity
           ex_arity = exprArity e
 
-repHoles :: CoreProgram -> Ghc CoreProgram
--- | Replace holes with variables 
-repHoles prog = do
-  env <- getSession
-  let ic = hsc_IC env
-  let inscopeVars = interactiveInScope ic
-  (prog',inscopeVars') <- replaceHoles (mkInScopeSet $ mkUniqSet inscopeVars) prog
-  let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars inscopeVars')
-  let env' = env {hsc_IC = ic'}
-  modifySession $ const env'
-  return prog'
-        where replaceHoles :: InScopeSet -> CoreProgram -> Ghc (CoreProgram,InScopeSet)
-              -- | Replace expressions representing holes with hole variables of the same type 
-              replaceHoles is cs = getSessionDynFlags >>= \df -> runStateT (tr cs) is
-                where tr :: CoreProgram -> StateT InScopeSet Ghc CoreProgram
-                      tr = transformBiM $ \case
-                        c@(Case e v t _) | isHoleExpr c -> do
-                                               let id = fromJust (getTypErr e)
-                                                   ty = exprType c
-                                                   name = makeName "hole" (getUnique id) (getSrcSpan (varName v))
-                                                   id' = setIdInfo (setVarType (setVarName v name) ty) idinf
-                                                   idinf = setArityInfo vanillaIdInfo (exprArity e)
-                                               return $ Var (globaliseId id') -- make global Id since hole could be something from any scope
 
-                                         | otherwise -> return c
-                        e -> return e
+repHoles :: CoreProgram -> CoreProgram 
+-- | Replace holes with variables 
+repHoles = transformBi $ \case
+    c@(Case e v t _)
+        | isHoleExpr c -> let id = fromJust (getTypErr e)
+                              ty = exprType c
+                              name = makeName "hole" (getUnique id) (getSrcSpan (varName v))
+                              id' = setIdInfo (setVarType (setVarName v name) ty) idinf
+                              idinf = setArityInfo vanillaIdInfo (exprArity e)
+                           in Var (globaliseId id') -- make global Id since hole could be something from any scope
+        | otherwise -> c
+    e -> e
 
 replacePatErrorLits :: CoreProgram -> CoreProgram
 -- | Replace patern error literals 
@@ -243,8 +214,21 @@ stripModInfo s = pack "pattern error"
 
 
 
+data VarType = Binder | CaseBind | GenVar
+
+data St = St {
+         env  :: Map.Map Var Var
+        ,freshCaseBindVar  :: Int
+        ,freshVar          :: Int
+        ,freshBindVar      :: Int
+        ,exerName  :: String
+        }
+
+type Ctx a = State St a
+
+
 initSt :: St
-initSt = St {env = Map.empty, freshNum = 0, exerName = ""}
+initSt = St {env = Map.empty, freshCaseBindVar = 0, freshVar = 0, freshBindVar = 0, exerName = ""}
 
 alphaWCtxt :: String -> CoreProgram -> (CoreProgram, Map.Map Var Var)
 -- | Do renaming and return map of renamed variables        
@@ -256,19 +240,19 @@ alpha :: String -> CoreProgram -> CoreProgram
 -- | Do renaming and return map of renamed variables        
 alpha fname cs = evalState st (initSt {exerName = fname})
     where st = mapM alphaR cs
- 
+
 
 alphaR :: CoreBind -> Ctx CoreBind
 alphaR (NonRec v e) = do
-        v' <- renameVar v
+        v' <- renameVar Binder v
         NonRec v' <$> aRename e
 alphaR (Rec es) = do
-        vars <- mapM (renameVar . fst) es
+        vars <- mapM (renameVar Binder . fst) es
         exps <- mapM (aRename . snd) es
         return $ Rec (zip vars exps)
 
-renameVar :: Id -> Ctx Id
-renameVar v = do
+renameVar :: VarType -> Id -> Ctx Id
+renameVar vty v = do
             env <- gets env
             name <- gets exerName
             case Map.lookup v env of
@@ -280,20 +264,32 @@ renameVar v = do
                        | isTyCoVar v  = return v
                        | isEvVar v    = return v   -- don't rename evidence variables 
                        | isHoleVar v  = return v   -- don't rename hole variables, already have fresh names 
-                       | otherwise    = renameV v   -- otherwise, rename (might need additional checks)
+                       | otherwise    = renameV vty v   -- otherwise, rename (might need additional checks)
 
-renameV :: Var -> Ctx Var
-renameV v = do
-    j <- gets freshNum
-    let namestr = "n_"++show j
-        name = makeName namestr (getUnique v) (getSrcSpan (varName v))
-    let v' = setVarName v name
-    modify $ \s -> s {env = Map.insert v v' (env s), freshNum = j+1} -- update map 
+renameV :: VarType -> Var -> Ctx Var
+renameV vty v = do
+    vname <- getVName vty
+    let v' = setVarName v (makeName vname (getUnique v) (getSrcSpan (varName v)))
+    modify $ \s -> s {env = Map.insert v v' (env s)} -- update map 
     return v'
+
+getVName :: VarType -> Ctx String
+getVName CaseBind = do
+                i <- gets freshCaseBindVar
+                modify $ \ s -> s {freshCaseBindVar = i+1}
+                return ("cb"++show i)
+getVName Binder = do
+                i <- gets freshBindVar
+                modify $ \ s -> s {freshBindVar = i+1}
+                return ("b" ++ show i)
+getVName GenVar = do
+                i <- gets freshVar
+                modify $ \ s -> s {freshVar = i+1}
+                return ("v" ++ show i)
 
 
 aRename :: CoreExpr -> Ctx CoreExpr
-aRename v@(Var id)     = Var <$> renameVar id
+aRename v@(Var id)     = Var <$> renameVar GenVar id
 aRename t@(Type _)     = return t
 aRename l@(Lit _)      = return l
 aRename (App e arg)    = do
@@ -301,12 +297,12 @@ aRename (App e arg)    = do
         arg' <- aRename arg
         return $ App e' arg'
 aRename l@(Lam b e)      = do --  trace ("Lambda var:" ++ show b ++ " isTyVar: " ++ show (isTyVar b)) $
-        b' <- renameVar b
+        b' <- renameVar GenVar b
         e' <- aRename e
         return $ Lam b' e'
 aRename c@(Case e v t a) = do
                             e' <- aRename e
-                            v' <- renameVar v
+                            v' <- renameVar CaseBind v
                             a' <- renameAlt a
                             return $ Case e' v' t a'
 aRename (Cast e co)    =
@@ -324,15 +320,16 @@ renameAlt :: [Alt Var] -> Ctx [Alt Var]
 renameAlt = mapM renameAlt'
     where renameAlt' :: Alt Var -> Ctx (Alt Var)
           renameAlt' (Alt ac vs e) = do
-            vs' <- mapM renameVar vs
+            vs' <- mapM (renameVar GenVar) vs
             e' <- aRename e
             return $ Alt ac vs' e'
 
 
 
-inlineBinds :: CoreProgram -> Ghc CoreProgram
+inlineBinds :: CoreProgram -> CoreProgram
 -- | Inline recursive binders as let-recs, and non recursive binders directly
-inlineBinds prog = do
+inlineBinds = inlineBind
+    {- do
   env <- getSession
   dflags <- getSessionDynFlags
   let ic = hsc_IC env
@@ -341,20 +338,19 @@ inlineBinds prog = do
   (prog',is') <- runStateT (inlineBind is prog) is
   let ic' = extendInteractiveContextWithIds ic (eltsUFM $ getUniqSet $ getInScopeVars is')
   let env' = env {hsc_IC = ic'}
-  return prog'
+  return prog' -}
 
-inlineBind :: InScopeSet -> CoreProgram -> StateT InScopeSet Ghc CoreProgram
-inlineBind is [] = return []
-inlineBind is (b:bs) = case b of
-    nr@(NonRec v e) -> do
-         if any (insB v) bs then do
+inlineBind :: CoreProgram -> CoreProgram
+inlineBind [] = []
+inlineBind (b:bs) = case b of
+    nr@(NonRec v e) -> if any (insB v) bs then 
                                     let (newBinds, rest) = inline nr bs
-                                     in inlineBind is rest >>= \bs' -> return $ newBinds ++ bs'
-                            else inlineBind is bs >>= \bs' -> return $ nr:bs'
-    rr@(Rec ((v,e):ls)) -> if any (insB v) bs then do
+                                     in newBinds ++ inlineBind rest 
+                        else nr:inlineBind bs 
+    rr@(Rec ((v,e):ls)) -> if any (insB v) bs then 
                                     let (newBinds, rest) = inline rr bs
-                                     in inlineBind is rest >>= \bs' -> return $ newBinds ++ bs'
-                            else inlineBind is bs >>= \bs' -> return $ rr:bs'
+                                     in newBinds ++ inlineBind bs 
+                            else rr:inlineBind bs 
 
 
 inline :: CoreBind -> [CoreBind] -> ([CoreBind],[CoreBind])
@@ -526,19 +522,37 @@ removeTyEvidence = transformBi $ \case
     where isEvBind (NonRec bi e) = isEvOrTyVar bi && isEvOrTyExp e
           isEvBind (Rec es) = all (isEvOrTyVar . fst) es && all (isEvOrTyExp . snd) es
 
-replaceCaseBinds :: CoreProgram -> CoreProgram 
+replaceCaseBinds :: CoreProgram -> CoreProgram
 -- | Substitute back the scrutinee for case binded name in case expressions
-replaceCaseBinds = transformBi repBinds  
+replaceCaseBinds = transformBi repBinds
 
 repBinds :: CoreExpr -> CoreExpr
 -- | replace case result binder with scrutinee 
 --  e.g. Case xs of ys -> {(n:ns) -> f ys} =>  Case xs of ys -> {(n:ns) -> f xs}
 repBinds (Case e b t as) = Case e b t (map (sub e b) as)
     where sub :: CoreExpr ->  Var -> Alt Var -> Alt Var
-          sub e v (Alt ac vars ex) = Alt ac vars (subE e v ex) 
-repBinds e = e 
-    
+          sub e v (Alt ac vars ex) = Alt ac vars (subE e v ex)
+repBinds e = e
 
+
+inlineRedLets :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
+-- | Inline redundant let expressions, e.g. let f = x in g f => g x 
+inlineRedLets = rewriteBi removeLet
+
+removeLet :: CoreExpr ->  Maybe CoreExpr
+removeLet (Let (NonRec b ex) e) | isTyApplication ex && isVar innExp = Just $ subst (getVar innExp) b e
+    where innExp = getInnerExp ex
+          getVar (Var v) = v
+removeLet _ = Nothing
+
+isTyApplication :: CoreExpr -> Bool
+isTyApplication (App e v) | isEvOrTyExp v = True
+                          | otherwise = isTyApplication e
+
+getInnerExp :: CoreExpr -> CoreExpr
+getInnerExp (App e v) | isEvOrTyExp v = getInnerExp e
+                      | otherwise     = App e v
+getInnerExp e = e
 
 
 -- Experimental 
@@ -565,38 +579,38 @@ setBindTopVar new (Rec ((v,e):es)) = Rec ((new,e):es)
 
 
 addDefaultCase :: CoreProgram -> Ghc CoreProgram
-addDefaultCase p = do 
-    env <- getSession 
+addDefaultCase p = do
+    env <- getSession
     let ic = hsc_IC env
     let inscopeVars = mkInScopeSet $ mkUniqSet $ interactiveInScope ic
-    transformBiM (addDefCase inscopeVars) p 
+    transformBiM (addDefCase inscopeVars) p
 
-newGhcVar :: Type -> InScopeSet -> Ghc Id 
+newGhcVar :: Type -> InScopeSet -> Ghc Id
 newGhcVar t is = do
     let uq = unsafeGetFreshLocalUnique is
         name = makeName "fresh" uq (mkGeneralSrcSpan (mkFastString "Dummy location"))
         id'  = mkLocalId name t t  -- reuse id information from top-level binder'
     return id'
-    
-addDefCase :: InScopeSet -> CoreBind -> Ghc CoreBind 
-addDefCase is (NonRec b e)     | not (hasCase e) && not (isEvOrTyVar b) = (addCase is e) >>= \ex -> return $ NonRec b ex 
-addDefCase is (Rec ((b,e):es)) | not (hasCase e) && not (isEvOrTyVar b) = (addCase is e) >>= \ex -> return $ Rec ((b,ex):es) 
-addDefCase is b = return b 
+
+addDefCase :: InScopeSet -> CoreBind -> Ghc CoreBind
+addDefCase is (NonRec b e)     | not (hasCase e) && not (isEvOrTyVar b) = (addCase is e) >>= \ex -> return $ NonRec b ex
+addDefCase is (Rec ((b,e):es)) | not (hasCase e) && not (isEvOrTyVar b) = (addCase is e) >>= \ex -> return $ Rec ((b,ex):es)
+addDefCase is b = return b
                         -- | needsCaseBinding (varType v) e = addCase e v -- rather tests whether
                                                                        -- needs to use a case rather than let bind
 
 addCase :: InScopeSet -> Expr Var -> Ghc (Expr Var)
 addCase is e = do
-    let v = getFirstNonTypeLam e 
-    let t = ft_res $ ft_res (dropForAlls $ exprType e) 
+    let v = getFirstNonTypeLam e
+    let t = ft_res $ ft_res (dropForAlls $ exprType e)
     wild <- newGhcVar t is  -- should have same type as the case 
     return $ liftLambdas e (Case (Var v) wild t [Alt DEFAULT [] (innerExp e)])
-    where innerExp (Lam v e) = innerExp e 
-          innerExp e         = e 
+    where innerExp (Lam v e) = innerExp e
+          innerExp e         = e
           liftLambdas (Lam v e) ex = Lam v (liftLambdas e ex)
-          liftLambdas _ ex         = ex 
-          getFirstNonTypeLam (Lam v e) | isEvOrTyVar v = getFirstNonTypeLam e  
-                                       | otherwise = v 
+          liftLambdas _ ex         = ex
+          getFirstNonTypeLam (Lam v e) | isEvOrTyVar v = getFirstNonTypeLam e
+                                       | otherwise = v
           getFirstNonTypeLam ex = error (show ex)
 
 
@@ -637,7 +651,7 @@ addCase e v = do
 -- ^ Determines the type resulting from applying an expression with given type
 --- to given argument expressions.
 -- Do I need to do this backwards when eta-reducing?
-caseToGuard :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
+{- caseToGuard :: BiplateFor CoreProgram => CoreProgram -> CoreProgram
 caseToGuard = rewriteBi etaRed
 ctg :: Expr Var ->  Maybe (Expr Var)
 -- | case to guard, e.g. case e of {Just a -> a} => case (e == Just a) of {True -> a}
@@ -653,4 +667,4 @@ freshVar t = do
     let name = makeName ("fresh" ++ show j) (mkUnique 'x' 0) $ mkGeneralSrcSpan (mkFastString "dummy loc")
     let id = mkLocalVar VanillaId name t t vanillaIdInfo
     modify $ \s -> s {env = Map.insert id id (env s), freshNum = j+1} -- update map 
-    return id 
+    return id  -}

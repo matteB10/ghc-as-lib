@@ -16,6 +16,7 @@ import GHC.Plugins
       Outputable,
       CoreBndr,
       CoreProgram,
+      Literal (..),
       fsLit,
       showPpr,
       getOccString,
@@ -88,6 +89,9 @@ isPatError (Case e _ t _) = case getPatErr e of
 isPatError _              = False
 
 
+getHoleMsg :: CoreExpr -> String 
+getHoleMsg e = concat [getLitString l | str@(Lit l) <- universe e, isTypedHolErrMsg l]
+
 isHoleVar :: Var -> Bool
 isHoleVar v = take 4 (getOccString v) == "hole"
 
@@ -100,8 +104,9 @@ isEvOrTyVar v = isTyVar v || isEvVar v
 
 isEvOrTyExp :: CoreExpr -> Bool 
 isEvOrTyExp e = case e of   
-    (Var v) -> isEvOrTyVar v 
-    _       -> False 
+    (Var v)  -> isEvOrTyVar v 
+    (Type t) -> True
+    _        -> False 
 
 isTy :: CoreExpr -> Bool
 isTy (Type _) = True 
@@ -134,6 +139,9 @@ subE e v = transformBi $ \case
 
 getAltExp :: Alt Var -> CoreExpr 
 getAltExp (Alt _ _ e) = e 
+
+getLitString :: Literal -> String 
+getLitString (LitString l) = utf8DecodeByteString l 
 
 getTypErr :: CoreExpr-> Maybe Var
 getTypErr = getVarFromName "typeError" 
@@ -209,7 +217,7 @@ printHoleLoc' (Rec es)         = mapM_ (printHoleLc . snd) es
 
 printHoleLc :: Expr CoreBndr -> IO ()
 printHoleLc (Var var) | getOccString (varName var) == "typeError" = return ()
-                   | otherwise =  return () --putStrLn ("occname: " ++ getOccString name ++ " , unique: " ++ show (nameUnique name))
+                      | otherwise =  return () --putStrLn ("occname: " ++ getOccString name ++ " , unique: " ++ show (nameUnique name))
                         where name = varName var
 printHoleLc (Lit l)            = when (isTypedHolErrMsg l) $ let ((r,c), t) = holeTypeFromMsg (show l)
                                                           in putStrLn $ "found hole at " ++ p (r ++ ":" ++ c) ++ " with type: " ++ t
