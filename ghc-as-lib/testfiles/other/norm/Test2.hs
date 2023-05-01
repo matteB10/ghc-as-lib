@@ -6,4 +6,4 @@ module Test2 where
 
 
 addAndMult :: Int -> [Int] -> [Int]
-addAndMult n xs = map (\x -> (2*x) + 2) xs 
+addAndMult n xs = map (\x -> n * (n+x)) xs 

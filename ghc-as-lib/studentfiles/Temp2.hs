@@ -1,5 +1,5 @@
-{-# OPTIONS_GHC -Wno-typed-holes #-}
-{-# OPTIONS_GHC -Wall #-}
+--{-# OPTIONS_GHC -Wno-typed-holes #-}
+--{-# OPTIONS_GHC -Wall #-}
 module Temp2 where 
 
 
@@ -25,4 +25,5 @@ myconcat xs = foldr (++) [] xs -}
 pack :: [a] -> [[a]]
 pack [] = [[]]
 pack [x] = [[x]]
-pack xs = (head xs : tail xs) : [xs] 
+pack _ = _ 
+--pack xs = (head xs : tail xs) : [xs] 
