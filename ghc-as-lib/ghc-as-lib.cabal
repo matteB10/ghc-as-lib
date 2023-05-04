@@ -52,7 +52,6 @@ library
                       ,Utils
                       ,Test 
                       ,CompileHs
-                      ,Rewrite
                       ,Parsers
                       ,HoleMatches
                       ,PrettyPrint
@@ -61,4 +60,6 @@ library
                       ,HoleMatches
                       ,Instance
                       ,PrettyPrint
+                      ,Feedback
+                      ,Warning
 

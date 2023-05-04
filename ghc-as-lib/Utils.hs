@@ -5,14 +5,14 @@ module Utils where
 
 
 -- GHC imports 
-import GHC ( DynFlags, TyCon, Type )
+import GHC ( DynFlags, TyCon, Type, SrcSpan, Name, Id )
 import GHC.Plugins
     ( Alt(Alt),
       AnonArgFlag(VisArg),
       Bind(..),
       Expr(..),
       Literal(LitString),
-      Var(varName, varType),
+      Var(..),
       Outputable,
       CoreBndr,
       CoreProgram,
@@ -20,7 +20,7 @@ import GHC.Plugins
       fsLit,
       showPpr,
       getOccString,
-      tyVarKind, showSDoc, showSDocUnsafe, isTyVar ) 
+      tyVarKind, showSDoc, showSDocUnsafe, isTyVar, Unique, mkGlobalVar, mkInternalName, mkOccName, mkGeneralSrcSpan, mkFastString, vanillaIdInfo, UniqSupply, uniqFromSupply, setIdNotExported, setVarName, mkLocalId ) 
 import GHC.Core.TyCo.Rep
     ( TyLit(StrTyLit),
       Type(TyConApp, LitTy, AppTy, FunTy, CastTy, ft_af, ft_arg, ft_res,
@@ -37,9 +37,11 @@ import Instance
 import GHC.Utils.Outputable
 import Language.Haskell.TH.Lib (conT)
 import GHC.RTS.Flags (getParFlags)
-import GHC.Core (CoreExpr, CoreBind)
+import GHC.Core (CoreExpr, CoreBind, isId)
 import GHC.Core.Predicate (isEvVar)
 import Data.Data ( Data )
+import qualified GHC.Types.Name.Occurrence as Occ
+import GHC.Types.Id.Info (IdDetails(..))
 
 type ExerciseName = String 
 
@@ -68,25 +70,69 @@ getExerciseName :: FilePath -> ExerciseName
 getExerciseName fp = takeWhile (/= '/') $ drop 1 $ dropWhile (/= '/') fp 
 
 
+fresh :: UniqSupply -> Var -> Var 
+fresh us id = 
+    let uq = uniqFromSupply us
+        name = makeName "fresh" uq (mkGeneralSrcSpan (mkFastString "Dummy location"))
+        id'  = setIdNotExported $ makeLocal $ setVarName id name -- reuse id information from top-level binder
+    in id'
+
+
+makeName :: String -> Unique -> SrcSpan -> Name
+-- | Create a name from a string and a variable
+--   used for renaming variables
+makeName n uq loc = mkInternalName uq (mkOccName Occ.varName n) loc
+
+makeLocal :: Var -> Var
+makeLocal v | isId v = mkLocalId (varName v) (varMult v) (varType v)
+
+
+makeGlobVar :: Unique -> Type -> String -> Var 
+makeGlobVar uq t n = mkGlobalVar id_det name t id_inf
+        where id_det = VanillaId
+              name   = mkInternalName uq (mkOccName Occ.varName n) (mkGeneralSrcSpan (mkFastString ("Loc " ++ n)))
+              id_inf = vanillaIdInfo
+
 varNameUnique :: Var -> String 
-varNameUnique = showSDocUnsafe . ppr 
+varNameUnique = showSDocUnsafe . ppr
+
+updateVar :: Var -> CoreBind -> CoreBind
+-- | update variable information 
+updateVar v = transformBi $ \e -> case e :: CoreExpr of
+        (Var v') | v == v' -> Var v
+        e       -> e
+
+getBindTopVar :: CoreBind -> Var
+-- | Get variable of a binder 
+getBindTopVar (NonRec v _) = v
+getBindTopVar (Rec ((v,e):_)) = v
+
+
+getBinds :: [CoreBind] -> Var -> [CoreBind]
+-- | Get all binders containing a certain variable
+getBinds binds v = [r | r <- binds, v `insB` r]
 
 
 isCaseExpr :: CoreExpr -> Bool 
 isCaseExpr (Case {}) = True 
 isCaseExpr _         = False 
 
-isHoleExpr :: CoreExpr-> Bool
+isHoleExpr :: CoreExpr -> Bool
+-- | Check if a case expression is a typed hole expression
 isHoleExpr (Case e _ t _) = case getTypErr e of 
-                                Just pe -> True 
-                                _ -> False 
-isHoleExpr _              = False
+                                Just pe -> True  -- need to check hasHoleMsg
+                                _ -> False       -- if deferring all type errors
+isHoleExpr _              = False                -- and not only typed holes
 
-isPatError :: CoreExpr-> Bool 
+isPatError :: CoreExpr -> Bool 
 isPatError (Case e _ t _) = case getPatErr e of 
                                 Just pe -> True 
                                 _ -> False 
 isPatError _              = False
+
+isPatErrVar :: CoreExpr -> Bool 
+isPatErrVar (Var v) = isErrVar "patError" v 
+isPatErrVar _       = False
 
 
 getHoleMsg :: CoreExpr -> String 
@@ -103,15 +149,16 @@ isEvOrTyVar :: Var -> Bool
 isEvOrTyVar v = isTyVar v || isEvVar v 
 
 isEvOrTyExp :: CoreExpr -> Bool 
+-- | Is type or type/evidence variable
 isEvOrTyExp e = case e of   
     (Var v)  -> isEvOrTyVar v 
     (Type t) -> True
     _        -> False 
 
-isTy :: CoreExpr -> Bool
-isTy (Type _) = True 
-isTy (Var v)  = isTyVar v 
-isTy _        = False 
+isTyOrTyVar :: CoreExpr -> Bool
+isTyOrTyVar (Type _) = True 
+isTyOrTyVar (Var v)  = isTyVar v 
+isTyOrTyVar _        = False 
 
 ins :: Data (Bind Var) => Var -> CoreExpr -> Bool
 -- | Find if a variable is used somewhere in an expression
@@ -162,22 +209,6 @@ getVarFromName name e | null vars = Nothing
                       | otherwise = head vars -- just return first found variable if any matching  
     where vars = [Just v | (Var v) <- universe e, getOccString v == name]
 
-{- containsErr :: String -> Expr Var -> Maybe (Expr Var)
-containsErr err = transformBiM $ \ex -> case ex :: Expr Var of 
-    e@(Var id) | isErrVar err id -> Just e 
-               | otherwise       -> Nothing 
-    _ -> Nothing  
-
-containsTErr :: String -> Expr Var -> [Maybe (Expr Var)]
-containsTErr err (Var id)   | isErrVar err id = [Just $ Var id]
-                            | otherwise = [Nothing]
-containsTErr _ (Lit l)        = [Nothing]
-containsTErr err (App e arg)    = containsTErr err e ++ containsTErr err arg
-containsTErr err (Lam b e)      = containsTErr err e
-containsTErr err (Case e _ _ _) = containsTErr err e
-containsTErr err (Cast e co)    = containsTErr err e
-containsTErr _ _              = [Nothing] -}
-
 
 isVar :: CoreExpr-> Bool
 isVar (Var _) = True
@@ -189,59 +220,11 @@ isErrVar s v = getOccString v == s
 isVarMod :: Var -> Bool
 isVarMod v = "$trModule" == take 9 (getOccString v)
 
-findLiterals :: CoreProgram -> String
-findLiterals cs = concat (concatMap findLits cs)
-
-findLits :: Bind CoreBndr -> [String]
-findLits (NonRec b exps)  = findLit exps
-findLits (Rec es)         = concatMap (findLit . snd) es
-
-findLit :: Expr CoreBndr -> [String]
-findLit (Var id)     = []
-findLit (Lit l)      = [show l] -- ++ "\n"-- here is type errors stored, print them
-findLit (App e bndr) = findLit e ++ findLit bndr
-findLit (Lam b e)    = findLit e
-findLit (Let bi e)   = findLits bi ++ findLit e
-findLit (Case e _ _ alts) = findLit e ++ concatMap (\(Alt _ _ e) -> findLit e) alts --Alt AltCon [b] (Expr b)
-findLit (Cast  e _)  = findLit e
-findLit (Tick _ e)   = findLit e
-findLit (Type t)     = []
-findLit (Coercion c) = []
-
-printHoleLoc :: CoreProgram -> IO ()
-printHoleLoc = mapM_ printHoleLoc'
-
-printHoleLoc' :: Bind CoreBndr -> IO ()
-printHoleLoc' (NonRec _ exps)  = printHoleLc exps
-printHoleLoc' (Rec es)         = mapM_ (printHoleLc . snd) es
-
-printHoleLc :: Expr CoreBndr -> IO ()
-printHoleLc (Var var) | getOccString (varName var) == "typeError" = return ()
-                      | otherwise =  return () --putStrLn ("occname: " ++ getOccString name ++ " , unique: " ++ show (nameUnique name))
-                        where name = varName var
-printHoleLc (Lit l)            = when (isTypedHolErrMsg l) $ let ((r,c), t) = holeTypeFromMsg (show l)
-                                                          in putStrLn $ "found hole at " ++ p (r ++ ":" ++ c) ++ " with type: " ++ t
-printHoleLc (App e bndr)       = printHoleLc e >> printHoleLc bndr
-printHoleLc (Lam b e)          = printHoleLc e
-printHoleLc (Let bi e)         = printHoleLoc' bi >> printHoleLc e
-printHoleLc (Case e _ _ alts)  = printHoleLc e >> mapM_ (\(Alt _ _ e) -> printHoleLc e) alts --alts :: Alt AltCon [b] (Expr b)
-printHoleLc (Cast  e _)        = printHoleLc e
-printHoleLc (Tick _ e)         = printHoleLc e
-printHoleLc (Type t)           = return ()
-printHoleLc (Coercion c)       = return ()
-
+hasHoleMsg :: CoreExpr -> Bool 
+hasHoleMsg e = not $ null [l | Lit l <- universe e, isTypedHolErrMsg l]
 
 isTypedHolErrMsg :: Literal -> Bool
 isTypedHolErrMsg (LitString l) = let msg = lines $ utf8DecodeByteString l
-                                 in last msg == "(deferred type error)"
+                                 in "hole" `elem` (words (msg !! 1))
 isTypedHolErrMsg _ = False
 
-
-holeTypeFromMsg :: String -> ((String, String), String)
-holeTypeFromMsg s = ((row,col), htype) --trace (show (lines s) ++ show (row,col,htype)) 
-    where (l1:l2:ls) = if length (lines s) > 1 then lines s else ["no hole", "is found"]
-          rm    =  drop 1 (dropWhile (/= ':') l1)
-          row   = takeWhile (/= ':') rm
-          col   = takeWhile (/= ':') (drop (length row + 1) rm)
-          hname = takeWhile (/= ' ') (drop 2 (dropWhile (/= ':') l2)) -- if hole suffixed with identifier
-          htype = drop 3 $ dropWhile (/= ':') (drop 1 (dropWhile (/= ':') l2))

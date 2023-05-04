@@ -5,7 +5,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 
 module CompileHs where
@@ -140,11 +139,10 @@ import qualified Language.Haskell.TH.Syntax as TH
 import Language.Haskell.TH.Syntax (liftData, Dec (..), AnnTarget (..), Pragma (AnnP), Q (unQ))
 
 
-import Rewrite
 import Parsers 
 import qualified Data.Text as T
 import Utils (showGhcUnsafe, printGhc)
-import TypeCheckW ( hscTypecheckAndGetWarnings )
+
 
 
 showGhc :: (Outputable a) => DynFlags -> a -> String
@@ -208,12 +206,7 @@ compile fp = runGhc (Just libdir) $ do
   modSum <- getModSummary $ mkModuleName (takeBaseName fp)
   pmod <- parseModule modSum 
   let (L l hsMod) = pm_parsed_source pmod -- ParsedSource = Located HsModule 
-  let parseProg = mkTH hsMod 
-  liftIO $ putStrLn "TH"
-  liftIO $ print parsdecl
-  liftIO $ putStrLn "mkTH"
-  p <- liftIO (runQ parseProg )
-  liftIO $ putStrLn $ pprint p  
+  liftIO $ print hsMod    
 
 
 compToPars :: FilePath -> IO HsModule
@@ -290,9 +283,6 @@ compToTc fp = runGhc (Just libdir) $ do
   liftIO $ banner "holetypes"
   liftIO $ putStrLn $ showSDocUnsafe $ ppr holetypes
   hscenv <- getSession 
-  --hscTypecheckAndGetWarnings :: HscEnv ->  ModSummary -> IO (FrontendResult, WarningMessages)
-  liftIO $ banner "typecheck and warnings" -- never find any warnings???
-  liftIO $ hscTypecheckAndGetWarnings hscenv modSum
   --liftIO $ banner "getinstances for type"
   --cand <- getInstancesForType (head holetypes) 
   --liftIO $ putStrLn $ showSDocUnsafe $ ppr cand 
@@ -499,16 +489,6 @@ makeId n = nameRdrName name
         where uq     = mkUnique 'a' 1
               name   = mkInternalName uq (mkOccName Occ.varName n) (mkGeneralSrcSpan (mkFastString ("Loc " ++ n)))
 
-mkName :: String -> TH.Name
-mkName n = TH.Name occn nfl
-  where occn = TH.mkOccName n
-        nfl  = TH.NameS
-
-getPats :: TH.Clause -> [TH.Pat]
-getPats (TH.Clause ps _ _) = ps
-
-match :: TH.Pat -> TH.Body -> [TH.Dec] -> TH.Match
-match = TH.Match
 
 {- rewriteFbsCase :: Q Exp -> Q Exp 
 rewriteFbsCase d@(TH.FunD name clauses) = do

@@ -1,7 +1,6 @@
 module Temp where
-dropevery :: [a] -> Int -> [a]
-dropevery xs n = _
 
+dupli [] = []
 {-# RULES
     "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs
 #-}
@@ -16,8 +15,10 @@ dropevery xs n = _
 #-}
 
 {-# RULES
-    "map/concatMap"   forall f xs.  concat (map f xs)  = concatMap f xs 
+    "concatmap/concatMap"   forall f xs.  concat (map f xs)  = concatMap f xs 
 #-}
+
+{-# RULES "concat.map/concatMap" forall f.  concat . map f = concatMap f #-}
 
 
 {-# RULES

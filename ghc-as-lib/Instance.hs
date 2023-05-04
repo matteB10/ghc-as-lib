@@ -165,9 +165,10 @@ name2Str :: Name -> String
 name2Str = getOccString
 
 instance Show Warnings where
-  show (NoWarnings)  = "No warning"
-  show (WarnAll w)   = showSDocUnsafe $ pprWarningTxtForMsg w
-  show (WarnSome ws) = concatMap (\(oc,wt) -> show oc ++ showSDocUnsafe (pprWarningTxtForMsg wt)) ws
+  show _ = ""
+  --show (NoWarnings)  = "No warning"
+  --show (WarnAll w)   = showSDocUnsafe $ pprWarningTxtForMsg w
+  --show (WarnSome ws) = concatMap (\(oc,wt) -> show oc ++ showSDocUnsafe (pprWarningTxtForMsg wt)) ws
 
 deriving instance Show TyThing
 
@@ -183,13 +184,6 @@ instance Show DynFlags where
 
 instance Show (EnumSet GeneralFlag) where
   show e = intercalate ", \n" (map show (toList e))
-
--- | A convenient shorthand notation for Biplate constraints
-class ( Biplate b CoreProgram, Biplate b CoreBind, Biplate b CoreExpr) 
-      => BiplateFor b
-instance BiplateFor CoreProgram      where
-instance BiplateFor CoreBind         where
-instance BiplateFor CoreExpr         where
 
 
 -- =========== SHOW INSTANCE FOR HSSYN ===============================================================

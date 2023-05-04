@@ -24,19 +24,21 @@ import GHC.Cmm (isAssociativeMachOp)
 import GHC.Core.Coercion (eqCoercion)
 import Data.Generics.Uniplate.Data ( children )
 import GHC.Core.Stats (exprSize)
+import Similar
 
 
 class Diff a where
     (~~) :: a -> a -> Int
 
 instance Diff CoreProgram where
+    p1 ~~ p2         | p1 ~= p2 = 0 
+                     | p1 ~> p2 = 1 
     (x:xs) ~~ (y:ys) = x ~~ y + xs ~~ ys
-    [] ~~ []         = 0
     _ ~~ _           = trace "different number of binders" 100 
 
 --- Without trace -------------------------------------
 instance Diff (Bind Var) where
-    (Rec es) ~~ (Rec es') = sum $ zipWith (curry (\((b,e),(b',e')) -> b ~~ b' + e ~~ e')) es es'
+    (Rec es) ~~ (Rec es') = sum (zipWith (curry (\((b,e),(b',e')) -> b ~~ b' + e ~~ e')) es es') + abs (length es - length es')
     (NonRec v e) ~~ (NonRec v' e') = v ~~ v' + e ~~ e'
     x ~~ y  = case (x,y) of 
         (NonRec v e,Rec ((v',e'):es))  -> v ~~ v' + e ~~ e' + length es 

@@ -20,7 +20,7 @@ import GHC.Core.DataCon (DataCon(..), dataConName)
 import GHC.Utils.Outputable (showSDocUnsafe, Outputable (ppr))
 import GHC.Types.Literal (Literal(..), LitNumType)
 
-import Utils ( isHoleVar, sp, isHoleVarExpr, isHoleExpr, isPatError, getAltExp, isCaseExpr)
+import Utils ( isHoleVar, sp, isHoleVarExpr, isHoleExpr, isPatError, isPatErrVar, getAltExp, isCaseExpr)
 import GHC.Core.Coercion (eqCoercion)
 import GHC.Core.Utils (exprType)
 
@@ -55,22 +55,21 @@ instance Similar [(Var,Expr Var)] where
     es ~= es' = all (\((b,e),(b',e')) -> b ~= b' && e ~= e') (zip es es') && length es == length es' 
 
 instance Similar (Expr Var) where
-    (Var id) ~> (Var id')                  = id ~> id'
-    (Type t) ~> (Type t')                  = t ~> t'
-    (Lit l)  ~> (Lit l')                   = l ~> l'
+    (Var id) ~> (Var id')                   = id ~> id'
+    (Type t) ~> (Type t')                   = t ~> t'
+    (Lit l)  ~> (Lit l')                    = l ~> l'
     (App (App f e) a) ~> (App (App f' e') a') | isCommutative f
                                                , f ~> f' = (e ~> e' && a ~> a') || e ~> a' && e' ~> a
-    (App e arg) ~> (App e' arg')           = e ~> e' && arg ~> arg'
+    (App e arg) ~> (App e' arg')            = e ~> e' && arg ~> arg'
 
-    (Lam b e) ~> (Lam b' e')               = b  ~> b' && e ~> e' -- check that the type of the head is equal                                      
-    (Case e v t as) ~> (Case e' v' t' as') = e ~> e' && v ~> v' && t  ~> t' && as ~> as'
-    e            ~> (Case e' v t as)       = any ((e ~>) . getAltExp) as 
-    (Cast e co)  ~> (Cast e' co')          = co ~> co' && e ~> e'
-    (Let b e)    ~> (Let b' e')            = b  ~> b' && e ~> e'
-    e            ~> (Let (NonRec b e') ine) = e ~> e' 
-    e            ~> (Let (Rec es) ine)     = any ((e ~>) . snd) es 
-    (Coercion c) ~> (Coercion c')          = c  ~> c'
-    x ~> y                                 = isHoleVarExpr x || isHoleExpr x 
+    (Lam b e) ~> (Lam b' e')                = b  ~> b' && e ~> e' -- check that the type of the head is equal                                      
+    (Case e v t as) ~> (Case e' v' t' as')  = e ~> e' && v ~> v' && t  ~> t' && as ~> as'
+    e            ~> (Case e' v t as)        = any ((e ~>) . getAltExp) as 
+    (Cast e co)  ~> (Cast e' co')           = co ~> co' && e ~> e'
+    (Let b e)    ~> (Let b' e')             = b  ~> b' && e ~> e'
+    e            ~> (Let (Rec es) ine)      = any ((e ~>) . snd) es 
+    (Coercion c) ~> (Coercion c')           = c  ~> c'
+    x ~> y                                  = isHoleVarExpr x || isHoleExpr x 
 
     (Var id) ~= (Var id')                  = id ~= id'
     (Type t) ~= (Type t')                  = t ~= t'
@@ -108,11 +107,7 @@ instance Similar [Alt Var] where
     xs ~= ys =  all (uncurry (~=)) (zip xs ys)
 
 instance Similar (Alt Var) where
-    (Alt ac vs e) ~> (Alt ac' vs' e') | --trace ("isPatErr" ++ show (isPatError e) ++ show e) 
-                                        isPatError e   = ac ~> ac' && vs ~> vs' -- if pattern error, student has missing cases, we dont check nested cases
-                                      -- | not . isCaseExpr $ e = case e' of 
-                                      --    Case _ _ _ as -> ac ~> ac' && vs ~> vs' && any ((e ~>) . getAltExp) as  
-                                      --    _      ->  compareAll 
+    (Alt ac vs e) ~> (Alt ac' vs' e') | isPatErrVar e = ac ~> ac' && vs ~> vs' -- if pattern error, student has missing cases, we dont check nested cases
                                       | otherwise = compareAll
                 where compareAll = ac ~> ac' && vs ~> vs' && e ~> e'
     (Alt ac vs e) ~= (Alt ac' vs' e')  = ac ~= ac' && vs ~= vs' && e ~= e'

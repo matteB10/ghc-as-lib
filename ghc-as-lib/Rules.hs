@@ -12,8 +12,10 @@
 #-}
 
 {-# RULES
-    "map/concatMap"   forall f xs.  concat (map f xs)  = concatMap f xs 
+    "concatmap/concatMap"   forall f xs.  concat (map f xs)  = concatMap f xs 
 #-}
+
+{-# RULES "concat.map/concatMap" forall f.  concat . map f = concatMap f #-}
 
 
 {-# RULES

@@ -1,5 +1,6 @@
 module DupliExpRec1 where
 
+
 dupli :: [a] -> [a]
 {-# DESC Use explicit @recursion (1st variant). #-}
 

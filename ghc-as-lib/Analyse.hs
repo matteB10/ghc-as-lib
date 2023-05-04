@@ -17,10 +17,10 @@ import GHC.Types.Var (Var)
 import Data.Generics.Uniplate.Data (universe, universeBi, transformBi, rewriteBi, rewriteBiM, transformBiM, Uniplate (descend), Biplate (..), childrenBi, children)
 import Similar 
 import Diff ((~~))
+import Utils (getAltExp)
 import GHC.Plugins
 import Data.Data.Lens (uniplate)
 import Data.List (nub)
-import Instance (BiplateFor)
 import Data.Generics.Biplate (biplateList)
 
 
@@ -37,7 +37,8 @@ hasRedundantPattern mp sp =
           go [] (s:sc) = True -- no case in model solution
           go _ _       = False 
           checkCase e1 e2 = case (e1,e2) of
-            (Case e1 _ _ alts1,Case e2 _ _ alts2) | e1 ~= e2 -> length alts1 < length alts2                                 
+            (Case e1 _ _ alts1,Case e2 _ _ alts2) | e1 ~= e2 -> length alts1 < length alts2 
+                                                              || not (any (hasCase . getAltExp) alts1) && any (hasCase . getAltExp) alts2
             (_,_) -> False 
          
 
