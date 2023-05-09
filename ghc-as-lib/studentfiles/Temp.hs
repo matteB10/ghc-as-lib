@@ -1,6 +1,7 @@
 module Temp where
 mylength :: [a] -> Int
-mylength = foldr ((+) . (const 0))  _
+mylength = 
+   foldr ((+) . (const _)) 0
 {-# RULES
     "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs
 #-}

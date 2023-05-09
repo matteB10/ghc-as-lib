@@ -132,7 +132,7 @@ isPatError (Case e _ t _) = case getPatErr e of
                                 Just pe -> True 
                                 _ -> False 
 isPatError (Tick _ e)     = isPatError e 
-isPatError _              = False 
+isPatError e              = isPatErrVar e 
 
 isPatErrVar :: CoreExpr -> Bool 
 isPatErrVar (Var v) = isErrVar "patError" v 

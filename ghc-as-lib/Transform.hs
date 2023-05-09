@@ -83,7 +83,7 @@ import GHC.Types.Tickish (GenTickish(..))
 
 preProcess :: CoreProgram -> IO CoreProgram 
 -- | Preprocessing transformations
-preProcess p = removeModInfo p >>= replaceHoles -- >>= replacePatErrors  
+preProcess p = removeModInfo p >>= replaceHoles >>= replacePatErrors  
 
 normalise :: String -> CoreProgram -> IO CoreProgram
 -- | Normalising transformations
@@ -122,7 +122,7 @@ replacePatErrors :: CoreProgram -> IO CoreProgram
 replacePatErrors = return . repPatErr
     where repPatErr :: CoreProgram -> CoreProgram  
           repPatErr = transformBi $ \case
-            c@(Case e v t _)
+            c@(Case e v t []) -- we only replace paterrors with empty alternatives 
                 | isPatError c -> let id = fromJust (getPatErr e)
                                       ty = exprType c
                                       name = makeName "patError" (getUnique id) (getSrcSpan (varName v))

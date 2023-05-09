@@ -263,7 +263,7 @@ compString input exercise = do
   hPutStrLn handle inputstr
   hFlush handle
   hClose handle
-  compSimpl exercise "./studentfiles/Temp.hs"
+  compSimplNormalised exercise "./studentfiles/Temp.hs"
 
 
 compTestNorm :: (FilePath -> Ghc (CoreProgram, ParsedSource, IORef [Warning]))
