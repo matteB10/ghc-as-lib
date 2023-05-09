@@ -16,8 +16,3 @@
 #-}
 
 {-# RULES "concat.map/concatMap" forall f.  concat . map f = concatMap f #-}
-
-
-{-# RULES
-    "lambda/pointfree" forall a. forall (f :: a -> a) (g :: a -> a) (xs :: [a]). map (\z -> f (g z)) xs = map (f . g) xs   
-#-}

@@ -32,7 +32,6 @@ class Diff a where
 
 instance Diff CoreProgram where
     p1 ~~ p2         | p1 ~= p2 = 0 
-                     | p1 ~> p2 = 1 
     (x:xs) ~~ (y:ys) = x ~~ y + xs ~~ ys
     _ ~~ _           = trace "different number of binders" 100 
 

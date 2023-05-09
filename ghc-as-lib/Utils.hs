@@ -42,6 +42,7 @@ import GHC.Core.Predicate (isEvVar)
 import Data.Data ( Data )
 import qualified GHC.Types.Name.Occurrence as Occ
 import GHC.Types.Id.Info (IdDetails(..))
+import Control.Lens (Field1(_1))
 
 type ExerciseName = String 
 
@@ -114,21 +115,24 @@ getBinds binds v = [r | r <- binds, v `insB` r]
 
 
 isCaseExpr :: CoreExpr -> Bool 
-isCaseExpr (Case {}) = True 
-isCaseExpr _         = False 
+isCaseExpr (Case {})  = True 
+isCaseExpr (Tick _ e) = isCaseExpr e 
+isCaseExpr _          = False 
 
 isHoleExpr :: CoreExpr -> Bool
 -- | Check if a case expression is a typed hole expression
 isHoleExpr (Case e _ t _) = case getTypErr e of 
                                 Just pe -> True  -- need to check hasHoleMsg
                                 _ -> False       -- if deferring all type errors
+isHoleExpr (Tick _ e)     = isHoleExpr e 
 isHoleExpr _              = False                -- and not only typed holes
 
 isPatError :: CoreExpr -> Bool 
 isPatError (Case e _ t _) = case getPatErr e of 
                                 Just pe -> True 
                                 _ -> False 
-isPatError _              = False
+isPatError (Tick _ e)     = isPatError e 
+isPatError _              = False 
 
 isPatErrVar :: CoreExpr -> Bool 
 isPatErrVar (Var v) = isErrVar "patError" v 
@@ -141,8 +145,9 @@ getHoleMsg e = concat [getLitString l | str@(Lit l) <- universe e, isTypedHolErr
 isHoleVar :: Var -> Bool
 isHoleVar v = take 4 (getOccString v) == "hole"
 
-isHoleVarExpr :: CoreExpr-> Bool
-isHoleVarExpr (Var v) = isHoleVar v 
+isHoleVarExpr :: CoreExpr -> Bool
+isHoleVarExpr (Var v)    = isHoleVar v
+isHoleVarExpr (Tick _ e) = isHoleVarExpr e -- any expression might be wrapped in ticks   
 isHoleVarExpr _ = False 
 
 isEvOrTyVar :: Var -> Bool 
@@ -156,9 +161,10 @@ isEvOrTyExp e = case e of
     _        -> False 
 
 isTyOrTyVar :: CoreExpr -> Bool
-isTyOrTyVar (Type _) = True 
-isTyOrTyVar (Var v)  = isTyVar v 
-isTyOrTyVar _        = False 
+isTyOrTyVar (Type _)   = True 
+isTyOrTyVar (Var v)    = isTyVar v 
+isTyOrTyVar (Tick _ e) = isTyOrTyVar e 
+isTyOrTyVar _          = False 
 
 ins :: Data (Bind Var) => Var -> CoreExpr -> Bool
 -- | Find if a variable is used somewhere in an expression
@@ -210,9 +216,10 @@ getVarFromName name e | null vars = Nothing
     where vars = [Just v | (Var v) <- universe e, getOccString v == name]
 
 
-isVar :: CoreExpr-> Bool
-isVar (Var _) = True
-isVar _       = False
+isVar :: CoreExpr -> Bool
+isVar (Var _)    = True
+isVar (Tick _ e) = isVar e
+isVar _          = False
 
 isErrVar :: String -> Var -> Bool
 isErrVar s v = getOccString v == s 

@@ -165,10 +165,9 @@ name2Str :: Name -> String
 name2Str = getOccString
 
 instance Show Warnings where
-  show _ = ""
-  --show (NoWarnings)  = "No warning"
-  --show (WarnAll w)   = showSDocUnsafe $ pprWarningTxtForMsg w
-  --show (WarnSome ws) = concatMap (\(oc,wt) -> show oc ++ showSDocUnsafe (pprWarningTxtForMsg wt)) ws
+  show (NoWarnings)  = "No warning"
+  show (WarnAll w)   = showSDocUnsafe $ pprWarningTxtForMsg w
+  show (WarnSome ws) = concatMap (\(oc,wt) -> show oc ++ showSDocUnsafe (pprWarningTxtForMsg wt)) ws
 
 deriving instance Show TyThing
 
@@ -311,7 +310,9 @@ sp s1 s2 = s1 ++ " " ++ s2
 showO :: Outputable a => a -> String
 showO = showSDocUnsafe . ppr 
 
-instance Show a => Show (EpAnn a) where show a = ""
+instance Show a => Show (EpAnn a) where 
+  show (EpAnn anchor ann comment) = "EpAnn " ++ show ann 
+  show EpAnnNotUsed               = "EpAnnNotUsed"  
 
 -- belongs to HsDecl if trying to derive instance 
 {- instance Show (TyClDecl GhcPs) where show a = ""
@@ -327,9 +328,11 @@ instance Show (WarnDecls GhcPs) where show a = ""
 instance Show (ForeignDecl GhcPs) where show a = ""
 instance Show (StandaloneKindSig GhcPs) where show a = "" -}
 
-instance Show SrcSpanAnnA where show a = ""
-
-instance Show (SrcSpanAnn' (EpAnn AnnList)) where show a = ""
+instance Show SrcSpanAnnA where 
+  show (SrcSpanAnn ann span) = show ann 
+  
+instance Show (SrcSpanAnn' (EpAnn AnnList)) where 
+  show (SrcSpanAnn n an) = showSDocUnsafe $ ppr n 
 
 instance Show EpAnnComments where
   show a = "" -- showSDocUnsafe $ ppr a
@@ -427,7 +430,7 @@ instance Show TransForm where
   show a = ""
 
 instance Show AddEpAnn where
-  show a = "" --showSDocUnsafe $ ppr a
+  show a = showSDocUnsafe $ ppr a
 
 instance Show (XBindStmtTc) where
   show a = ""
@@ -462,7 +465,7 @@ instance Show (HsRecField' (AmbiguousFieldOcc GhcTc) (GenLocated SrcSpanAnnA (Hs
 instance Show (HsRecFields GhcTc (GenLocated SrcSpanAnnA (HsExpr GhcTc))) where
   show k = ""
 instance Show GrhsAnn where
-  show s = ""
+  show s = showSDocUnsafe $ ppr s 
 instance (Show a) => Show (Sig a) where
   show s = ""
 

@@ -5,12 +5,14 @@
 {-# HLINT ignore "Redundant bracket" #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 
 module Compile where
 
 -- | Main module for compiling to different compilation passes 
 
+import Prelude hiding (span)
 
 import GHC
     ( compileToCoreModule,
@@ -30,7 +32,12 @@ import GHC
       mkModuleName,
       coreModule,
       cm_binds,
-      LoadHowMuch (LoadAllTargets))
+      NoExtField (..),
+      HsExpr (..),
+      reLocA,
+      realSrcSpan,
+      la2r,
+      LoadHowMuch (LoadAllTargets), TypecheckedModule (..), TypecheckedSource, GhcTc, HsExpr (HsApp, HsUnboundVar), noLocA, GenLocated (L), LHsExpr, DesugaredModule (dm_core_module), ParsedSource, GhcPs, ParsedModule (pm_parsed_source), MapXRec (mapXRec), SrcSpan (RealSrcSpan), SrcSpanAnnA, SrcSpanAnn' (SrcSpanAnn), Target, SuccessFlag, srcLocFile, ParsedMod (parsedSource))
 import GHC.Paths (libdir)
 import GHC.Driver.Session
     ( DynFlags(..),
@@ -47,19 +54,20 @@ import GHC.Unit.Module.ModGuts ( ModGuts(mg_binds) )
 import GHC.Core ( CoreProgram, Bind(..), Expr(..), Alt(..), AltCon(..), CoreBind(..), CoreExpr, CoreBndr)
 import GHC.Types.Error
     ( SDoc, Severity(SevError, SevFatal, SevWarning) ) 
-import GHC.Types.Tickish ( CoreTickish )
+import GHC.Types.Tickish ( GenTickish(..), CoreTickish)
 import GHC.Core.Lint ( lintPassResult )
-import GHC.Driver.Env ( HscEnv(hsc_dflags) ) 
+import GHC.Driver.Env ( HscEnv(..) ) 
 import GHC.Driver.Monad
     ( liftIO,
       getSessionDynFlags,
       pushLogHookM,
+      modifySession,
       Ghc,
       GhcMonad(getSession) ) 
 import qualified GHC.Data.EnumSet as EnumSet
 import GHC.Unit.Module.Warnings (Warnings (..), pprWarningTxtForMsg)
 import GHC.Data.FastString (fsLit, mkFastString)
-import GHC.Types.SrcLoc (SrcSpan)
+import GHC.Types.SrcLoc (SrcSpan, mkRealSrcLoc, mkRealSrcSpan, RealSrcSpan, pprUserRealSpan, isGeneratedSrcSpan)
 
 import System.FilePath ( replaceDirectory, takeBaseName )
 import Debug.Trace (trace)
@@ -67,7 +75,6 @@ import Control.Monad (unless)
 
 import Transform
     ( alpha, normalise, preProcess, removeModInfo, removeTyEvidence ) 
-import Utils ( ExerciseName )
 import GHC.Core.Opt.Monad
     ( liftIO,
       CoreToDo(..) ) 
@@ -79,11 +86,17 @@ import System.IO
 
 
 import Data.Function (on)
-import Data.List ( nub ) 
+import Data.List ( nub , nubBy ) 
 import Data.Data (Data)
 import Data.IORef ( newIORef, readIORef, IORef, modifyIORef ) 
 import Utils 
 import Warning 
+import Data.Generics.Uniplate.Data
+import Annotation
+import GHC.Data.Bag (bagToList)
+
+import Splint (plugin )
+import GHC.Driver.Plugins (PluginWithArgs(..), StaticPlugin(..))
 
 holeFlags :: [GeneralFlag]
 -- | General flags concerning typed holes 
@@ -111,9 +124,9 @@ genFlags :: [GeneralFlag]
 genFlags = [
             Opt_DoCoreLinting
            ,Opt_DeferTypedHoles
-           ,Opt_DoCoreLinting
            ,Opt_DeferDiagnostics
            ,Opt_InfoTableMap
+           ,Opt_AutoLinkPackages
            ]
 
 unsetGenFlags :: [GeneralFlag]
@@ -126,7 +139,6 @@ setWarnFlags :: [WarningFlag]
 setWarnFlags = [Opt_WarnOverlappingPatterns
               , Opt_WarnIncompletePatterns
               , Opt_WarnTypedHoles
-              , Opt_WarnRedundantConstraints
               ]
 
 unsetWarnFlags :: [WarningFlag]
@@ -151,81 +163,99 @@ setFlags b flags = do
                           generalFlags = EnumSet.fromList gflags}
    setSessionDynFlags dflags3 
 
-toDesugar' :: Bool -> [GeneralFlag] -> FilePath -> Ghc (ModGuts, IORef [Warning])
+
+data CompInfo = CompInfo {
+    core :: CoreProgram,
+    parsed :: ParsedSource,
+    warns  :: [Warning]
+}
+
+loadWithPlugins :: GhcMonad m => DynFlags -> Target -> [StaticPlugin] -> m SuccessFlag
+-- | Load ghc with a list of plugins
+loadWithPlugins dflags t the_plugins = do
+      -- first unload (like GHCi :load does)
+      GHC.setTargets []
+      _ <- GHC.load LoadAllTargets
+      setTargets [t]
+      modifySession $ \hsc_env ->
+        let old_plugins = hsc_static_plugins hsc_env
+        in hsc_env { hsc_static_plugins = old_plugins ++ the_plugins}
+      setSessionDynFlags dflags { outputFile_ = Nothing }
+      load LoadAllTargets
+
+toDesugar' :: Bool -> [GeneralFlag] -> FilePath -> Ghc (ModGuts, ParsedSource, IORef [Warning])
 -- | Compile a file to the desugar pass + simple optimiser and return Modguts and warnings
 toDesugar' setdefaultFlags flags fp = do
   env <- getSession
   setFlags setdefaultFlags flags 
-  target <- guessTarget fp Nothing
-  setTargets [target]
-  load LoadAllTargets
   ref <- liftIO (newIORef [])
   pushLogHookM (writeWarnings ref)
-  modSum <- getModSummary $ mkModuleName (takeBaseName fp)
-  dmod <- desugarModule =<< typecheckModule =<< parseModule modSum 
+  target <- guessTarget fp Nothing
+  dflags <- getSessionDynFlags
+  --liftIO $ print dflags 
+  loadWithPlugins dflags target [StaticPlugin $ PluginWithArgs
+            { paArguments = [],
+              paPlugin = plugin -- hlint plugin
+            }] 
+  
+  modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
+  pmod <- parseModule modSum 
+  tmod <- typecheckModule pmod 
+  let tprog = attachNote (tm_typechecked_source tmod)
+  dmod <- desugarModule (tmod {tm_typechecked_source = tprog})
   let modguts = coreModule dmod 
   cprog <- liftIO $ preProcess (mg_binds modguts) -- apply preprocessing transformations
   let mg = modguts {mg_binds = cprog} 
-  return (mg,ref)
+  return (mg, (pm_parsed_source pmod), ref)
 
-toSimplify :: FilePath -> Ghc (CoreProgram, IORef [Warning])
+toSimplify :: FilePath -> Ghc (CoreProgram, ParsedSource, IORef [Warning])
 -- | Replace holes and run simplifier 
 toSimplify fp = do 
-  (mgCore,ref) <- toDesugar' True (holeFlags ++ genFlags ++ simplFlags) fp 
+  (mgCore,psrc,ref) <- toDesugar' True (holeFlags ++ genFlags ++ simplFlags) fp 
   env <- getSession
   mgSimpl <- liftIO $ core2core env (mgCore {mg_binds = (mg_binds mgCore)})
-  return (mg_binds mgSimpl, ref)
+  return (mg_binds mgSimpl,psrc,ref)
 
-toDesugar :: FilePath -> Ghc (CoreProgram, IORef [Warning])
+toDesugar :: FilePath -> Ghc (CoreProgram, ParsedSource, IORef [Warning])
 -- | Desugar and return coreprogram and warnings  
 toDesugar fp = 
-    (toDesugar' False (holeFlags ++ genFlags) fp) >>= \(mg,ref) -> return (mg_binds mg,ref)
+    (toDesugar' False (holeFlags ++ genFlags) fp) >>= \(mg,psrc,ref) -> return (mg_binds mg,psrc,ref)
 
 
-compSimplNormalised :: ExerciseName -> FilePath -> IO (CoreProgram, [Warning])
+compSimplNormalised :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile a file to normalised Core with simplifier
 compSimplNormalised name fp = runGhc (Just libdir) $ do 
-  (prog,ref) <- toSimplify fp 
+  (prog,psrc,ref) <- toSimplify fp 
   prog' <- liftIO $ normalise name prog 
   ws <- liftIO (readIORef ref)
-  return (removeTyEvidence prog', ws)
+  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws)
 
-compDesNormalised :: ExerciseName -> FilePath -> IO (CoreProgram, [Warning])
+compDesNormalised :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile a file to normalised Core without simplifier
 compDesNormalised name fp = runGhc (Just libdir) $ do 
-  (prog,ref) <- toDesugar fp 
+  (prog,psrc,ref) <- toDesugar fp 
   prog' <- liftIO $ normalise name prog
   ws <- liftIO (readIORef ref)
-  return (removeTyEvidence prog', ws)
+  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws)
 
-compSimpl :: ExerciseName -> FilePath -> IO (CoreProgram, [Warning])
+compSimpl :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile to simplified core directly, return renamed program and warnings
-compSimpl n fp = runGhc (Just libdir) $ do
-  ref <- liftIO (newIORef [])
-  pushLogHookM (writeWarnings ref)
-  env <- getSession
-  setFlags True (holeFlags ++ genFlags ++ simplFlags)
-  mod <- compileToCoreSimplified fp
-  prog <- liftIO $ alpha n =<< removeModInfo (cm_binds mod)
-  w <- liftIO $ readIORef ref 
-  return (prog,w)
+compSimpl _ fp = runGhc (Just libdir) $ do
+  (prog,psrc,ref) <- toSimplify fp
+  ws <- liftIO $ readIORef ref  
+  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws)
 
-compDes :: ExerciseName -> FilePath -> IO (CoreProgram, [Warning])
+compDes :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile to desugared core directly, return renamed program and warnings
-compDes n fp = runGhc (Just libdir) $ do
-  ref <- liftIO (newIORef [])
-  pushLogHookM (writeWarnings ref)
-  env <- getSession
-  setFlags False (holeFlags ++ genFlags)
-  mod <- compileToCoreModule fp
-  prog <- liftIO $ alpha n =<< removeModInfo (cm_binds mod)
-  w <- liftIO $ readIORef ref 
-  return (prog,w)
+compDes _ fp = runGhc (Just libdir) $ do
+  (prog,psrc,ref) <- toDesugar fp 
+  ws <- liftIO $ readIORef ref
+  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws)
 
 
 --- For testing purposes 
 
-compString :: String -> ExerciseName -> IO (CoreProgram, [Warning])
+compString :: String -> ExerciseName -> IO CompInfo
 compString input exercise = do 
   rules <- readFile "Rules.hs"
   let inputstr = "module Temp where\n" `nl` input `nl` rules
@@ -233,17 +263,17 @@ compString input exercise = do
   hPutStrLn handle inputstr
   hFlush handle
   hClose handle
-  compSimplNormalised exercise "./studentfiles/Temp.hs"
+  compSimpl exercise "./studentfiles/Temp.hs"
 
 
-compTestNorm :: (FilePath -> Ghc (CoreProgram, IORef [Warning]))
-         -> ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)
+compTestNorm :: (FilePath -> Ghc (CoreProgram, ParsedSource, IORef [Warning]))
+                -> ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)
 -- | Compile with given function, return normalised program and environment
 compTestNorm f n fp = runGhc (Just libdir) $ do
-  (prog,_) <- f fp 
-  prog' <- liftIO $ normalise n prog 
+  (core, p, w) <- f fp 
+  prog <- liftIO $ normalise n core  
   env <- getSession 
-  return (prog',env)
+  return (prog,env)
 
 
 typeCheckCore :: CoreProgram -> HscEnv -> IO ()
@@ -253,3 +283,4 @@ typeCheckCore coreprog env = do
        dflags = hsc_dflags env
    unless (gopt Opt_DoCoreLinting dflags) $ error "CoreLinting flag must be set"
    liftIO $ lintPassResult env coretodo (coreprog)
+

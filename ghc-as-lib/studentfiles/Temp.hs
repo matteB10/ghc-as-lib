@@ -1,6 +1,6 @@
 module Temp where
-
-dupli [] = []
+mylength :: [a] -> Int
+mylength = foldr ((+) . (const 0))  _
 {-# RULES
     "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs
 #-}
@@ -20,7 +20,3 @@ dupli [] = []
 
 {-# RULES "concat.map/concatMap" forall f.  concat . map f = concatMap f #-}
 
-
-{-# RULES
-    "lambda/pointfree" forall a. forall (f :: a -> a) (g :: a -> a) (xs :: [a]). map (\z -> f (g z)) xs = map (f . g) xs   
-#-}

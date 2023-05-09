@@ -83,7 +83,7 @@ import GHC.Types.Tickish (GenTickish(..))
 
 preProcess :: CoreProgram -> IO CoreProgram 
 -- | Preprocessing transformations
-preProcess p = removeModInfo p >>= replaceHoles >>= replacePatErrors  
+preProcess p = removeModInfo p >>= replaceHoles -- >>= replacePatErrors  
 
 normalise :: String -> CoreProgram -> IO CoreProgram
 -- | Normalising transformations
@@ -136,9 +136,22 @@ etaReduce :: CoreProgram -> IO CoreProgram
 -- | eta reduction, e.g., \x -> f x => f
 etaReduce = return . rewriteBi etaRed
     where etaRed :: CoreExpr ->  Maybe CoreExpr
-          etaRed (Lam v (App f args))         | isEtaReducable f args v = return f
-          etaRed (Lam v (Let b (App f args))) | isEtaReducable f args v = return (Let b f)
-          etaRed _ = Nothing
+          {- etaRed (Lam v e) = reduce v e 
+          etaRed _         = Nothing  -}
+          etaRed (Lam v (Tick t (App f args)))         | isEtaReducable f args v = return (Tick t f)  
+          etaRed (Lam v (App f args))                  | isEtaReducable f args v = return f
+          etaRed (Lam v (Let b (Tick t (App f args)))) | isEtaReducable f args v = return (Let b (Tick t f))
+          etaRed (Lam v (Let b (App f args)))          | isEtaReducable f args v = return (Let b f)
+          etaRed _ = Nothing 
+
+{- reduce :: Var -> CoreExpr -> Maybe CoreExpr 
+reduce v (Tick _ e)   = reduce v e 
+reduce v (Let b e)    = case reduce v e of 
+                            Just ex -> return (Let b ex)
+                            Nothing -> Nothing 
+reduce v (App f args) | isEtaReducable f args v = return f 
+reduce _ _ = Nothing  -}
+  
 
 isEtaReducable :: CoreExpr -> CoreExpr -> Var -> Bool
 isEtaReducable f arg v = case arg of
@@ -148,6 +161,7 @@ isEtaReducable f arg v = case arg of
               ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
               ,not (isEvVar v)   -- don't remove evidence variables 
               -> True
+            Tick _ e -> isEtaReducable f e v 
             _ -> False
 
 
@@ -378,13 +392,15 @@ replaceCaseBinds = return . transformBi repBinds
 
 removeTyEvidence :: CoreProgram -> CoreProgram
 -- | Remove types and type evidence from a Coreprogram
-removeTyEvidence = transformBi $ \case
-        (Lam v e)        | isEvVar v || isTyVar v -> e
-        (App f (Var v))  | isEvVar v || isTyVar v -> f
-        (App f (Type t)) -> f
-        (Let b e) | isEvBind b -> e
-        e -> e
-    where isEvBind (NonRec bi e) = isEvOrTyVar bi && isEvOrTyExp e
+removeTyEvidence = transformBi removeTy 
+
+    where removeTy = \case
+            (Lam v e)        | isEvVar v || isTyVar v -> e
+            (App f (Var v))  | isEvVar v || isTyVar v -> f
+            (App f (Type t)) -> f
+            (Let b e) | isEvBind b -> e
+            e -> e
+          isEvBind (NonRec bi e) = isEvOrTyVar bi && isEvOrTyExp e
           isEvBind (Rec es) = all (isEvOrTyVar . fst) es && all (isEvOrTyExp . snd) es
 
 --- EXPERIMENTAL STUFF BELOW

@@ -325,6 +325,52 @@ extractLits b = lits
             exps = universeBi bs :: [LHsExpr GhcTc]
             lits = [L l (HsLit li a) | L l (HsLit li a) <- exps]
 
+{- 
+compToTctest :: FilePath -> IO (CoreProgram, [Warning])
+-- | Compile and stop after typechecker 
+compToTctest fp = runGhc (Just libdir) $ do
+  dflags <- getSessionDynFlags
+  let flags = EnumSet.delete Opt_KeepOFiles $ EnumSet.delete Opt_KeepHiFiles (generalFlags dflags)
+  let gflags = EnumSet.toList flags ++ genFlags
+  let dflags' = dflags {refLevelHoleFits = Just 2,
+                        maxValidHoleFits = Just 8,
+                        maxRefHoleFits   = Just 15,
+                        generalFlags = EnumSet.fromList gflags}
+  setSessionDynFlags dflags'
+  ref <- liftIO (newIORef [])
+  pushLogHookM (writeWarnings ref)
+  target <- guessTarget fp Nothing
+  loadWithPlugins dflags' target [StaticPlugin $ PluginWithArgs
+            { paArguments = [],
+              paPlugin = plugin -- hlint plugin
+            }] 
+  
+  --load LoadAllTargets
+  modSum <- getModSummary $ mkModuleName (takeBaseName fp)
+  pmod <- parseModule modSum 
+  let pprogram = attachNoteP $ pm_parsed_source pmod
+  
+  let pticks = extractTicksP pprogram 
+  --let holes = extractUn pprogram 
+  --liftIO $ print holes 
+  --liftIO $ putStrLn $ showGhcUnsafe pprogram
+  --liftIO $ print pprogram  
+  --liftIO $ print $ map showParsedExpr pticks
+  tmod <- typecheckModule pmod 
+  let tprogram = attachNote $ tm_typechecked_source tmod
+  liftIO $ print $ tm_typechecked_source tmod 
+  liftIO $ print $ extractTicksT (tm_typechecked_source tmod )
+  liftIO $ print $ map sourceName (extractTicksT tprogram)
+  dmod <- desugarModule (tmod {tm_typechecked_source = tprogram})
+  let cmod = dm_core_module dmod 
+  liftIO $ print (mg_binds cmod)
+  warns <- liftIO $ readIORef ref  
+  let coreticks = getTicks (mg_binds cmod )
+  liftIO $ print coreticks 
+  liftIO $ print (map sourceName coreticks)
+  let warninglocations = map realSrcSpan (getWarnLoc warns )
+  cprog <- liftIO $ preProcess (mg_binds cmod) >>= normalise "dupli"
+  return (cprog, nub warns) -}
 {- rewriteGuards :: Data (GRHS a b) => TypecheckedSource -> TypecheckedSource
 rewriteGuards = transformBi $ \expr -> case expr of 
   L FunBind {fun_matches = MG {mg_alts = L  [L  (Match {m_ctxt = FunRhs {..}, m_pats = [p], m_grhss = GRHSs {grhssGRHSs = [L a GRHS [] b]}})]}} [] -> undefined 

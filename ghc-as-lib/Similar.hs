@@ -69,6 +69,8 @@ instance Similar (Expr Var) where
     (Let b e)    ~> (Let b' e')             = b  ~> b' && e ~> e'
     e            ~> (Let (Rec es) ine)      = any ((e ~>) . snd) es 
     (Coercion c) ~> (Coercion c')           = c  ~> c'
+    (Tick _ e)   ~> e'                      = e ~> e' 
+    e ~> (Tick _ e')                        = e ~> e' 
     x ~> y                                  = isHoleVarExpr x || isHoleExpr x 
 
     (Var id) ~= (Var id')                  = id ~= id'
@@ -83,6 +85,8 @@ instance Similar (Expr Var) where
     (Cast e co)  ~= (Cast e' co')          = co ~= co' && e ~= e'
     (Let b e)    ~= (Let b' e')            = b  ~= b' && e ~= e'
     (Coercion c) ~= (Coercion c')          = c  ~= c'
+    (Tick _ e)   ~= e'                     = e ~= e' 
+    e ~= (Tick _ e')                       = e ~= e' 
     x ~= y                                 = False
 
 
@@ -107,7 +111,8 @@ instance Similar [Alt Var] where
     xs ~= ys =  all (uncurry (~=)) (zip xs ys)
 
 instance Similar (Alt Var) where
-    (Alt ac vs e) ~> (Alt ac' vs' e') | isPatErrVar e = ac ~> ac' && vs ~> vs' -- if pattern error, student has missing cases, we dont check nested cases
+    (Alt ac vs e) ~> (Alt ac' vs' e') | isPatError e 
+                                      , not (isPatError e') = ac ~> ac' && vs ~> vs' -- if pattern error, student has missing cases, we dont check nested cases
                                       | otherwise = compareAll
                 where compareAll = ac ~> ac' && vs ~> vs' && e ~> e'
     (Alt ac vs e) ~= (Alt ac' vs' e')  = ac ~= ac' && vs ~= vs' && e ~= e'
@@ -121,7 +126,7 @@ instance Similar [Var] where
 instance Similar AltCon where
     (DataAlt a) ~> (DataAlt a') = a ~> a'
     (LitAlt l)  ~> (LitAlt l')  = l ~> l'
-    DEFAULT     ~> _            = True
+    DEFAULT     ~> DEFAULT      = True
     _           ~> _            = False
     (~=) = (~>)
 

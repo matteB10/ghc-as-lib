@@ -21,10 +21,11 @@ extra-source-files: CHANGELOG.md
 library
     exposed-modules:  Compile
     build-depends:    base >=4.16
-                      ,ghc-paths
-                      ,ghc == 9.2.5
+                      ,ghc-paths 
+                      ,ghc >=9.2.5 && < 9.3
                       ,ghc-boot
                       ,ghc-prim
+                      ,ghc-exactprint
                       ,filepath 
                       ,containers
                       ,transformers
@@ -43,7 +44,7 @@ library
                       ,aeson
                       ,temporary
                       ,bytestring
-                      ,MyPlug
+                      ,splint 
                       
     default-language: Haskell2010
     other-modules:    Similar 
@@ -54,12 +55,11 @@ library
                       ,CompileHs
                       ,Parsers
                       ,HoleMatches
-                      ,PrettyPrint
+                      ,Print
                       ,Analyse
                       ,Diff
                       ,HoleMatches
                       ,Instance
-                      ,PrettyPrint
                       ,Feedback
                       ,Warning
 

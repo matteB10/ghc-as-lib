@@ -8,7 +8,7 @@
 module Test where
 
 import GHC.Core (CoreProgram)
-import GHC (HscEnv)
+import GHC (HscEnv, ParsedSource)
 import GHC.Utils.Outputable
 
 import Compile
@@ -17,7 +17,7 @@ import Transform
 import Similar
 import Utils
 import HoleMatches
-import PrettyPrint
+import Print
 
 import System.Directory (listDirectory, doesDirectoryExist)
 import System.FilePath ((</>), takeDirectory, takeExtension, takeBaseName)
@@ -39,9 +39,9 @@ import GHC.Driver.Session (programName, WarningFlag (..), WarnReason (..))
 import GHC.Plugins 
 import Warning ( Warning(reason) ) 
 import Feedback
-    ( Feedback, getFeedback, mkFeedback, isMatch, isOnTrack ) 
+    ( Feedback, mkFeedback, isMatch, isOnTrack ) 
 
-testAll :: (ExerciseName -> FilePath -> IO (CoreProgram, [Warning])) -> IO ()
+testAll :: (ExerciseName -> FilePath -> IO CompInfo) -> IO ()
 -- | Test and output number of matched tests
 testAll compilefun = do
   exercises <- listDirectory path
@@ -87,19 +87,18 @@ testTcAll f = do
 tcCore :: (CoreProgram, HscEnv) -> IO ()
 tcCore = uncurry typeCheckCore
 
+toTuple :: CompInfo -> IO (CoreProgram, ParsedSource, [Warning])
+toTuple (CompInfo prog ps ws) = return (prog,ps,ws)
 
-
-compare_pr :: (FilePath -> IO (CoreProgram, [Warning])) -> Bool -> FilePath -> FilePath -> IO Bool
+compare_pr :: (FilePath -> IO CompInfo) -> Bool -> FilePath -> FilePath -> IO Bool
 compare_pr compile b fp1 fp2 = do
-  (model,mw) <- compile fp1
-  (student,sw) <- compile fp2
-  let mw_reason = map reason mw
-      sw_reason = map reason sw
-  let pred = student ~> model
-      match = student ~= model
+  minf <- compile fp1
+  sinf <- compile fp2 
+  let pred = core sinf ~> core minf 
+      match = core sinf ~= core minf 
       res = pred || match 
-  when (not res && b) $ putStrLn $ "failed to match : " ++ show fp1 `nl` show (getFeedback sw)
-  let feedback = mkFeedback match res False sw  
+  let feedback = mkFeedback sinf [minf]
+  when (not res && b) $ putStrLn $ "failed to match : " ++ show fp1 `nl` show feedback 
   return ((isMatch feedback || isOnTrack feedback) == b) -- feedback matches expected result
 
 
@@ -180,10 +179,10 @@ decodeJson fp = do
 
 msPath = "./modelsolutions/"
 
-testItems :: (ExerciseName -> FilePath -> IO (CoreProgram, [Warning])) -> FilePath -> IO ()
-testItems c jsonfile = do
+testItems :: (ExerciseName -> FilePath -> IO CompInfo) -> FilePath -> IO ()
+testItems cfun jsonfile = do
   items <- decodeJson jsonfile
-  results <- mapM (testItem c) items
+  results <- mapM (testItem cfun) items
   let exps = filter (\(x,y,z) -> (x,y,z)==(True,True,z)) results -- same results as in Ask-Elle 
       expf = filter (\(x,y,z) -> (x,y,z)==(False,False,z)) results
       succ = filter (\(x,y,z) -> (x,y,z)==(False,True,z)) results
@@ -199,18 +198,18 @@ testItems c jsonfile = do
   putStrLn $ f succ ++ "/" ++ nboftest ++ " could now be matched"
   putStrLn $ f fail ++ "/" ++ nboftest ++ " expected to match, but failed"
 
-testItem :: (ExerciseName -> FilePath -> IO (CoreProgram, [Warning])) -> TestItem -> IO (Bool,Bool,String)
+testItem :: (ExerciseName -> FilePath -> IO CompInfo) -> TestItem -> IO (Bool,Bool,String)
 -- | (True,True) : Success in Ask-Elle, Success in ghc 
 --   (False,False) : Unknown in Ask-Elle, Failure in ghc 
 --   (False, True) : Unknown in Ask-Elle, success in ghc 
 testItem f ti = do
     writeProg ti
     let exercisename = takeBaseName (exerciseid ti)
-    (stProg,ws) <- f exercisename "./studentfiles/Temp.hs"  -- student progrm
+    (stProg,psrc,ws) <- toTuple =<< f exercisename "./studentfiles/Temp.hs"  -- student progrm
     modelFiles <- getFilePaths (msPath ++ exerciseid ti)
     mProgs <- mapM (f exercisename) modelFiles
-    let pred = any ((stProg ~>) . fst) mProgs  -- is predecessor to any of the model solutions
-        match = any ((stProg ~=) . fst) mProgs -- is similar to any of the model solutions
+    let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions
+        match = any ((stProg ~=) . core) mProgs -- is similar to any of the model solutions
         res =  pred || match
     --print res 
     --printRedundantPat ti stProg (zip mProgs modelFiles)
@@ -251,9 +250,10 @@ minBy f x y
 getSmallestP :: [((CoreProgram,FilePath), Int)] -> (CoreProgram,FilePath)
 getSmallestP programs = fst $ foldr1 (minBy snd) programs
 
+printProg :: Show a => a -> IO ()
 printProg prog = do
      putStrLn "----------------------------------"
-     putStrLn prog
+     print prog
      putStrLn "----------------------------------\n"
 
 tempHeader = "module Temp where\n"
@@ -293,12 +293,15 @@ analyse' :: TestItem -> IO Feedback
 analyse' ti = do
   writeProg ti
   let exercisename = takeBaseName (exerciseid ti)
-  (stProg,warns) <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
+  stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
   modelFiles <- getFilePaths (msPath ++ (exerciseid ti))
-  mProgs <- mapM (compSimplNormalised exercisename) modelFiles
-  let pred = any ((stProg ~>) . fst) mProgs  -- is predecessor to any of the model solutions
-      match = any ((stProg ~=) . fst) mProgs -- is similar to any of the model solutions
-      feedback = mkFeedback match pred False warns 
+  mInf <- mapM (compSimplNormalised exercisename) modelFiles
+  --let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions
+  --    match = any ((stProg ~=) . core) mProgs -- is similar to any of the model solutions
+  let feedback = mkFeedback stInf mInf
+  putStrLn "------------------------------- "
+  putStrLn (input ti) >> print feedback
+  putStrLn "------------------------------- "
   return feedback
 
 
@@ -306,13 +309,13 @@ analyse :: String -> ExerciseName -> IO Feedback
 analyse input exercise = do
   writeInput input
   let exercisename = takeBaseName exercise
-  (stProg,warns) <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
+  stInfo <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
   modelFiles <- getFilePaths (msPath ++ exercise)
-  mProgs <- mapM (compSimplNormalised exercisename) modelFiles
-  let pred = any ((stProg ~>) . fst) mProgs  -- is predecessor to any of the model solutions
-      match = any ((stProg ~=) . fst) mProgs -- is similar to any of the model solutions
-      modProgFiles = zip (map fst mProgs) modelFiles
+  modInfo <- mapM (compSimplNormalised exercisename) modelFiles
+  {- let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions
+      match = any ((stProg ~=) . core) mProgs -- is similar to any of the model solutions
+      modProgFiles = zip (map core mProgs) modelFiles
       (closest,cfile) = getSmallestP $ map (g stProg) modProgFiles -- get model prog with smallest diff 
-      hasRedPat = closest `hasRedundantPattern` stProg
-  print $ cfile 
-  return $ mkFeedback match pred hasRedPat warns
+      hasRedPat = closest `hasRedundantPattern` stProg -}
+  --print $ cfile 
+  return $ mkFeedback stInfo modInfo
