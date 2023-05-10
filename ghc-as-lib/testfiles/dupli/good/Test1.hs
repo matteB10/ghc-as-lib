@@ -2,5 +2,4 @@
 module Test1 where 
 
 dupli :: [a] -> [a] 
-dupli xs = concatMap hole xs
-    where hole = _ 
+dupli = _ 

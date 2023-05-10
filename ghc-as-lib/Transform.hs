@@ -85,14 +85,14 @@ preProcess :: CoreProgram -> IO CoreProgram
 -- | Preprocessing transformations
 preProcess p = removeModInfo p >>= replaceHoles >>= replacePatErrors  
 
-normalise :: String -> CoreProgram -> IO CoreProgram
+normalise :: String -> CoreProgram -> IO (CoreProgram, Map Var Var) 
 -- | Normalising transformations
 normalise name p = inlineBinds p >>=
                    recToLetRec >>= 
                    removeRedEqCheck >>= 
                    replaceCaseBinds >>=
-                   etaReduce >>=
-                   alpha name
+                   etaReduce >>= 
+                   alphaWCtxt name 
 
 removeModInfo :: CoreProgram -> IO CoreProgram
 -- | Remove module information
@@ -181,9 +181,9 @@ type Ctx a = State St a
 initSt :: St
 initSt = St {env = Map.empty, freshCaseBindVar = 0, freshVar = 0, freshBindVar = 0, exerName = ""}
 
-alphaWCtxt :: String -> CoreProgram -> (CoreProgram, Map.Map Var Var)
+alphaWCtxt :: String -> CoreProgram -> IO (CoreProgram, Map.Map Var Var)
 -- | Do renaming and return map of renamed variables        
-alphaWCtxt fname cs = (prog, env state)
+alphaWCtxt fname cs = return (prog, env state)
     where (prog,state) = runState st (initSt {exerName = fname})
           st = mapM alphaR cs
 
@@ -304,6 +304,9 @@ insertBind :: CoreBind -> [CoreBind] -> [CoreBind]
 --  recursive binders are inlined as a let-rec
 insertBind n@(NonRec v e) bs = map insertB bs -- inline another nonrec 
     where insertB bi@(NonRec b e') = (transformBi $ \case
+            (Var v') | v == v' -> e
+            e -> e) bi
+          insertB bi@(Rec es) = (transformBi $ \case
             (Var v') | v == v' -> e
             e -> e) bi
 insertBind (Rec ((v,e):es)) bs = map insertR bs

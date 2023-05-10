@@ -9,14 +9,15 @@ import GHC.Core (CoreProgram)
 import HoleMatches (getHoleMatches, getSrcSpan)
 import Compile (CompInfo(..))
 import Similar
-import Print (showParsedFromLoc)
+import Print (showParsedFromLoc, showTransParsedFromLoc)
 import Data.Maybe (isJust, catMaybes, fromJust)
 import Data.List ((\\), deleteFirstsBy, find, isPrefixOf)
 import GHC.Driver.Ppr (showSDoc)
 import Analyse (hasRedundantPattern)
 import Diff ((~~))
+import Utils
 
-data Feedback = Complete
+data Feedback = Complete Feedback
               | NoWarns
               | Ontrack Feedback
               | IncompletePat String
@@ -31,7 +32,7 @@ data Feedback = Complete
               | Many [Feedback]
 
 instance Show Feedback where
-  show Complete            = "You've finished the exercise\n"
+  show (Complete f)        = "You've finished the exercise\n" ++ show f
   show NoWarns             = ""
   show (IncompletePat s)   = "You have an incomplete pattern:\n" ++ s
   show (OverlappingPat s)  = "You have an overlapping pattern:\n" ++ s
@@ -46,7 +47,7 @@ instance Show Feedback where
   show (HLint s)           = "HLint found simplification: " ++ s ++ "\n" 
 
 mkFeedback :: CompInfo -> [CompInfo] -> Feedback
-mkFeedback s ms | isSimilarTo (~=) s ms             = Complete -- add HLint warnings maybe?
+mkFeedback s ms | isSimilarTo (~=) s ms             = Complete warnfb -- add HLint warnings maybe?
                 | isSimilarTo (~>) s ms 
                 , not (hasOverlappingPat s)
                 , not (hasUnmatchedModelWarns s ms) = Ontrack $ warnfb >+> holefb -- if overlapping, we cannot know if student on track or not
@@ -89,7 +90,8 @@ printHoleMatch :: CompInfo -> CompInfo -> [String]
 printHoleMatch s m = strings 
         where holematches = getHoleMatches (core s) (core m)
               spans = catMaybes $ filter isJust $ map getSrcSpan holematches
-              strings = map (showParsedFromLoc (parsed m)) spans
+              nameMap = translateNames (names s) (names m)
+              strings = map (showTransParsedFromLoc nameMap (parsed m)) spans
 
 hasRedundantPat :: CompInfo -> [CompInfo] -> Bool
 -- | Check if a student attempt contains a redundant pattern 
@@ -122,8 +124,8 @@ hasUnmatchedModelWarns s m = any (\x -> reason x /= NoReason) (warns closest_mod
 
 isMatch :: Feedback -> Bool
 isMatch = \case
-  Complete  -> True
-  _         -> False
+  Complete _  -> True
+  _           -> False
 
 isOnTrack :: Feedback -> Bool
 isOnTrack = \case

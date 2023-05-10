@@ -5,7 +5,7 @@ module Utils where
 
 
 -- GHC imports 
-import GHC ( DynFlags, TyCon, Type, SrcSpan, Name, Id )
+import GHC ( DynFlags, TyCon, Type, SrcSpan, Name, Id, RealSrcLoc, ParsedSource, LHsExpr, HsDecl (..), GhcPs, HsModule (..), getLocA, Located, SrcSpanAnnA, GRHSs (..), GRHS (GRHS), HsExpr (HsVar) )
 import GHC.Plugins
     ( Alt(Alt),
       AnonArgFlag(VisArg),
@@ -28,21 +28,23 @@ import GHC.Core.TyCo.Rep
 import GHC.Utils.Encoding (utf8DecodeByteString)
 
 -- General imports 
-import Data.Maybe ( isNothing, fromJust )
+import Data.Maybe ( isNothing, fromJust, catMaybes, isJust )
 import Data.Generics.Uniplate.Data  
 import Control.Monad (when)
 
 -- Local imports 
 import Instance 
 import GHC.Utils.Outputable
-import Language.Haskell.TH.Lib (conT)
-import GHC.RTS.Flags (getParFlags)
 import GHC.Core (CoreExpr, CoreBind, isId)
 import GHC.Core.Predicate (isEvVar)
 import Data.Data ( Data )
 import qualified GHC.Types.Name.Occurrence as Occ
 import GHC.Types.Id.Info (IdDetails(..))
-import Control.Lens (Field1(_1))
+import GHC (GenLocated(..), RealSrcSpan, ParsedModule, Ghc)
+import GHC.Hs (HsMatchContext(..))
+import GHC.Types.SrcLoc (srcSpanToRealSrcSpan)
+import Data.Map (Map)
+import qualified Data.Map as Map 
 
 type ExerciseName = String 
 
@@ -66,9 +68,58 @@ sp x y = x ++ " " ++ y
 nl x y = x ++ "\n" ++ y
 cm x y = x ++ " , " ++ y
 
-getExerciseName :: FilePath -> ExerciseName 
--- very hard coded, works for current file structure
-getExerciseName fp = takeWhile (/= '/') $ drop 1 $ dropWhile (/= '/') fp 
+hasTypSig :: ParsedSource -> Bool 
+-- | Check if a type signature is explicitely declared 
+hasTypSig (L l hsm) = any isSigD (hsmodDecls hsm)
+      where isSigD = \case 
+             (L _ (SigD _ _)) -> True 
+             _                -> False 
+
+nonEmpty :: [a] -> Bool 
+nonEmpty = not . null 
+
+getHsExprFromLoc :: RealSrcSpan -> ParsedSource -> Maybe [LHsExpr GhcPs]
+getHsExprFromLoc rss ps | nonEmpty locExps = return locExps 
+                        | otherwise        = Nothing 
+    where exps     = universeBi ps :: [LHsExpr GhcPs]
+          locExps  = catMaybes $ filter isJust $ map (matchRealSpan rss) exps 
+
+
+getHsRhsFromLoc :: RealSrcSpan -> ParsedSource -> Maybe [LHsExpr GhcPs]
+getHsRhsFromLoc rss ps@(L l hsm) | nonEmpty locExDec = return locExDec 
+                                  | otherwise         = Nothing  
+    where locDecls = catMaybes $ filter isJust $ map (matchRealSpan rss) (hsmodDecls hsm)
+          locExDec = [c | ex@(L loc (GRHS a b c)) <- universeBi locDecls :: [GenLocated SrcSpan (GRHS GhcPs (LHsExpr GhcPs))]]
+         
+          
+matchRealSpan :: RealSrcSpan -> GenLocated SrcSpanAnnA a -> Maybe (GenLocated SrcSpanAnnA a)
+matchRealSpan rss ex = case srcSpanToRealSrcSpan (getLocA ex) of
+              (Just realspan) | realspan == rss -> Just ex 
+              _                                 -> Nothing
+
+mapVar2Str :: Map Var Var -> Map String String 
+-- | Convert a map of variables to a map with their occurence names 
+mapVar2Str m = Map.mapKeys getOccString (Map.map getOccString m)
+
+translateNames :: Map Var Var -> Map Var Var -> Map String String 
+-- | Create a translation map from model variable names to student variable names 
+translateNames studMap modMap = Map.fromList (map go modList) 
+    where modList  = Map.toList (mapVar2Str modMap)
+          studMapFlipped = keysToVals (mapVar2Str studMap)
+          go :: (String, String) -> (String, String)
+          go (m_src,m_new) = case Map.lookup m_new studMapFlipped of 
+            Just s_src -> (m_src, s_src)
+            Nothing -> (m_src,"unknown") -- should preferably never happen 
+
+keysToVals :: Map String String -> Map String String 
+keysToVals mp = Map.fromList (zip vals keys) 
+   where keys = Map.keys mp 
+         vals = Map.elems mp 
+
+substHs :: Map String String -> LHsExpr GhcPs -> LHsExpr GhcPs
+substHs names = rewriteBi $ \e -> case e :: LHsExpr GhcPs of 
+        L l (HsVar a b) -> return $ L l (HsVar a b) -- this function does absolutely nothing right now
+        ex              -> return ex                -- must figure out how to rename HsVars 
 
 
 fresh :: UniqSupply -> Var -> Var 

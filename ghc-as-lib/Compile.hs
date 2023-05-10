@@ -97,6 +97,9 @@ import GHC.Data.Bag (bagToList)
 
 import Splint (plugin )
 import GHC.Driver.Plugins (PluginWithArgs(..), StaticPlugin(..))
+import GHC.Types.Id (Var)
+import Data.Map ( Map )
+import qualified Data.Map as Map 
 
 holeFlags :: [GeneralFlag]
 -- | General flags concerning typed holes 
@@ -167,7 +170,8 @@ setFlags b flags = do
 data CompInfo = CompInfo {
     core :: CoreProgram,
     parsed :: ParsedSource,
-    warns  :: [Warning]
+    warns  :: [Warning],
+    names :: Map Var Var 
 }
 
 loadWithPlugins :: GhcMonad m => DynFlags -> Target -> [StaticPlugin] -> m SuccessFlag
@@ -226,31 +230,31 @@ compSimplNormalised :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile a file to normalised Core with simplifier
 compSimplNormalised name fp = runGhc (Just libdir) $ do 
   (prog,psrc,ref) <- toSimplify fp 
-  prog' <- liftIO $ normalise name prog 
+  (prog',names) <- liftIO $ normalise name prog 
   ws <- liftIO (readIORef ref)
-  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws)
+  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws) names 
 
 compDesNormalised :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile a file to normalised Core without simplifier
 compDesNormalised name fp = runGhc (Just libdir) $ do 
   (prog,psrc,ref) <- toDesugar fp 
-  prog' <- liftIO $ normalise name prog
+  (prog', names) <- liftIO $ normalise name prog
   ws <- liftIO (readIORef ref)
-  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws)
+  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws) names 
 
 compSimpl :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile to simplified core directly, return renamed program and warnings
 compSimpl _ fp = runGhc (Just libdir) $ do
   (prog,psrc,ref) <- toSimplify fp
   ws <- liftIO $ readIORef ref  
-  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws)
+  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws) Map.empty 
 
 compDes :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile to desugared core directly, return renamed program and warnings
 compDes _ fp = runGhc (Just libdir) $ do
   (prog,psrc,ref) <- toDesugar fp 
   ws <- liftIO $ readIORef ref
-  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws)
+  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws) Map.empty 
 
 
 --- For testing purposes 
@@ -271,7 +275,7 @@ compTestNorm :: (FilePath -> Ghc (CoreProgram, ParsedSource, IORef [Warning]))
 -- | Compile with given function, return normalised program and environment
 compTestNorm f n fp = runGhc (Just libdir) $ do
   (core, p, w) <- f fp 
-  prog <- liftIO $ normalise n core  
+  (prog,_) <- liftIO $ normalise n core  
   env <- getSession 
   return (prog,env)
 

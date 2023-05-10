@@ -40,6 +40,9 @@ import GHC.Plugins
 import Warning ( Warning(reason) ) 
 import Feedback
     ( Feedback, mkFeedback, isMatch, isOnTrack ) 
+import Options.Applicative.Common (runParser)
+import Language.Haskell.GHC.ExactPrint.Parsers (parseDecl)
+import Data.Map (Map)
 
 testAll :: (ExerciseName -> FilePath -> IO CompInfo) -> IO ()
 -- | Test and output number of matched tests
@@ -87,8 +90,8 @@ testTcAll f = do
 tcCore :: (CoreProgram, HscEnv) -> IO ()
 tcCore = uncurry typeCheckCore
 
-toTuple :: CompInfo -> IO (CoreProgram, ParsedSource, [Warning])
-toTuple (CompInfo prog ps ws) = return (prog,ps,ws)
+toTuple :: CompInfo -> IO (CoreProgram, ParsedSource, [Warning], Map Var Var)
+toTuple (CompInfo prog ps ws n) = return (prog,ps,ws,n)
 
 compare_pr :: (FilePath -> IO CompInfo) -> Bool -> FilePath -> FilePath -> IO Bool
 compare_pr compile b fp1 fp2 = do
@@ -205,7 +208,7 @@ testItem :: (ExerciseName -> FilePath -> IO CompInfo) -> TestItem -> IO (Bool,Bo
 testItem f ti = do
     writeProg ti
     let exercisename = takeBaseName (exerciseid ti)
-    (stProg,psrc,ws) <- toTuple =<< f exercisename "./studentfiles/Temp.hs"  -- student progrm
+    (stProg,psrc,ws,_) <- toTuple =<< f exercisename "./studentfiles/Temp.hs"  -- student progrm
     modelFiles <- getFilePaths (msPath ++ exerciseid ti)
     mProgs <- mapM (f exercisename) modelFiles
     let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions
@@ -261,6 +264,7 @@ tempHeader = "module Temp where\n"
 writeProg :: TestItem -> IO ()
 writeProg ti = do
     rules <- readFile "Rules.hs"
+
     let inputstr = tempHeader ++ typesig ti `nl` input ti `nl` rules
     -- Write the inputstr to the temporary file
     handle <- openFile "studentfiles/Temp.hs" WriteMode
@@ -293,9 +297,9 @@ analyse' :: TestItem -> IO Feedback
 analyse' ti = do
   writeProg ti
   let exercisename = takeBaseName (exerciseid ti)
-  stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
+  stInf <- compDes exercisename "./studentfiles/Temp.hs"  -- student progrm
   modelFiles <- getFilePaths (msPath ++ (exerciseid ti))
-  mInf <- mapM (compSimplNormalised exercisename) modelFiles
+  mInf <- mapM (compDes exercisename) modelFiles
   --let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions
   --    match = any ((stProg ~=) . core) mProgs -- is similar to any of the model solutions
   let feedback = mkFeedback stInf mInf

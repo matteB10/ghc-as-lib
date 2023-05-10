@@ -20,7 +20,7 @@ import GHC.Core.DataCon (DataCon(..), dataConName)
 import GHC.Utils.Outputable (showSDocUnsafe, Outputable (ppr))
 import GHC.Types.Literal (Literal(..), LitNumType)
 
-import Utils ( isHoleVar, sp, isHoleVarExpr, isHoleExpr, isPatError, isPatErrVar, getAltExp, isCaseExpr)
+import Utils ( isHoleVar, sp, isHoleVarExpr, isHoleExpr, isPatError, isPatErrVar, getAltExp, isCaseExpr, nl)
 import GHC.Core.Coercion (eqCoercion)
 import GHC.Core.Utils (exprType)
 
@@ -44,7 +44,7 @@ instance Similar (Bind Var) where
     (Rec es) ~> (Rec es')          = es ~> es' 
     (NonRec v e) ~> (NonRec v' e') = v ~> v' && e ~> e'
     (NonRec v e) ~> Rec [(v',e')]  = v ~> v' && e ~> e'
-    _ ~> _                         = False
+    _ ~> _                         = trace ("different binders?") False
 
     (Rec es) ~= (Rec es')          = es ~= es'
     (NonRec v e) ~= (NonRec v' e') = v ~= v' && e ~= e'
@@ -70,8 +70,9 @@ instance Similar (Expr Var) where
     e            ~> (Let (Rec es) ine)      = any ((e ~>) . snd) es 
     (Coercion c) ~> (Coercion c')           = c  ~> c'
     (Tick _ e)   ~> e'                      = e ~> e' 
-    e ~> (Tick _ e')                        = e ~> e' 
-    x ~> y                                  = isHoleVarExpr x || isHoleExpr x 
+    e            ~> (Tick _ e')             = e ~> e' 
+    x ~> y                                  = trace ("fall through " ++ show x `nl` show y) 
+                                                isHoleVarExpr x || isHoleExpr x 
 
     (Var id) ~= (Var id')                  = id ~= id'
     (Type t) ~= (Type t')                  = t ~= t'
@@ -86,7 +87,7 @@ instance Similar (Expr Var) where
     (Let b e)    ~= (Let b' e')            = b  ~= b' && e ~= e'
     (Coercion c) ~= (Coercion c')          = c  ~= c'
     (Tick _ e)   ~= e'                     = e ~= e' 
-    e ~= (Tick _ e')                       = e ~= e' 
+    e            ~= (Tick _ e')            = e ~= e' 
     x ~= y                                 = False
 
 
@@ -98,10 +99,10 @@ instance Similar Coercion where
 
 instance Similar Literal where
   (LitString l)    ~> (LitString l')   = True -- accept all litstrings instead of replacing lit strings 
-  (LitChar c)      ~> (LitChar c')     = c == c'
-  (LitNumber ti i) ~> (LitNumber tj j) = ti == tj && i == j
-  (LitFloat f)     ~> (LitFloat f')    = f == f'
-  (LitDouble d)    ~> (LitDouble d')   = d == d'
+  (LitChar c)      ~> (LitChar c')     = (trace "LITC")c == c'
+  (LitNumber ti i) ~> (LitNumber tj j) = (trace "LITN") ti == tj && i == j
+  (LitFloat f)     ~> (LitFloat f')    = (trace "LITF")f == f'
+  (LitDouble d)    ~> (LitDouble d')   = (trace "LITD")d == d'
   l ~> k                               = True
 
   (~=) = (~>)
@@ -111,27 +112,28 @@ instance Similar [Alt Var] where
     xs ~= ys =  all (uncurry (~=)) (zip xs ys)
 
 instance Similar (Alt Var) where
-    (Alt ac vs e) ~> (Alt ac' vs' e') | isPatError e 
+    a1@(Alt ac vs e) ~> a2@(Alt ac' vs' e') | isPatError e 
                                       , not (isPatError e') = ac ~> ac' && vs ~> vs' -- if pattern error, student has missing cases, we dont check nested cases
                                       | otherwise = compareAll
-                where compareAll = ac ~> ac' && vs ~> vs' && e ~> e'
+                where compareAll = trace ("case alt errors?" ++ show(ac ~> ac' && vs ~> vs' && e ~> e') ++ show a1 ++ show a2 ) 
+                                ac ~> ac' && vs ~> vs' && e ~> e'
     (Alt ac vs e) ~= (Alt ac' vs' e')  = ac ~= ac' && vs ~= vs' && e ~= e'
 
 instance Similar [Var] where
-    xs ~> ys = length xs == length ys &&
-        all (uncurry (~>)) (zip xs ys)
+    xs ~> ys = all (uncurry (~>)) (zip xs ys)
     xs ~= ys = length xs == length ys &&
         all (uncurry (~>)) (zip xs ys)
 
 instance Similar AltCon where
-    (DataAlt a) ~> (DataAlt a') = a ~> a'
-    (LitAlt l)  ~> (LitAlt l')  = l ~> l'
+    (DataAlt a) ~> (DataAlt a') = trace ("altcon: " ++ show (a ~> a') ++ show a ++ "," ++ show a') a ~> a'
+    (LitAlt l)  ~> (LitAlt l')  = trace ("litalt: " ++ show (l ~> l')) l ~> l'
     DEFAULT     ~> DEFAULT      = True
-    _           ~> _            = False
+    a           ~> b            = trace ("altcons def: " ++ show a ++ show b) False
     (~=) = (~>)
 
 instance Similar DataCon where
-    x ~> y = dataConName x == dataConName y
+    x ~> y = dcName x == dcName y
+        where dcName = getOccString . dataConName  
     (~=) = (~>)
 
 instance Similar Var where
@@ -139,7 +141,7 @@ instance Similar Var where
     v1 ~= v2 = getOccString v1 == getOccString v2
 
 instance Similar Type where
-    k1 ~> k2 = show k1 == show k2
+    k1 ~> k2 = trace ("typeeq" ++ show (show k1 == show k2) ++ show k1 ++ show k2) show k1 == show k2
     (~=) = (~>)
             -- to disregard uniques of typevars from different programs we don't use eqType
             -- using eqType would require same uniques, which we don't have across different compilations

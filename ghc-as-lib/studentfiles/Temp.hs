@@ -1,7 +1,7 @@
 module Temp where
-mylength :: [a] -> Int
-mylength = 
-   foldr ((+) . (const _)) 0
+elementat :: [a] -> Int -> a
+elementat (x:xs) 0 = x
+elementat (x:xs) y = elementat xs (y - 1)
 {-# RULES
     "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs
 #-}
