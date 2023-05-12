@@ -2,4 +2,6 @@
 module Test1 where 
 
 dupli :: [a] -> [a] 
-dupli = _ 
+dupli xs = concatMap (replicate 2) (_ :: [a]) 
+
+

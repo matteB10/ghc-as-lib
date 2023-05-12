@@ -297,9 +297,9 @@ analyse' :: TestItem -> IO Feedback
 analyse' ti = do
   writeProg ti
   let exercisename = takeBaseName (exerciseid ti)
-  stInf <- compDes exercisename "./studentfiles/Temp.hs"  -- student progrm
+  stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
   modelFiles <- getFilePaths (msPath ++ (exerciseid ti))
-  mInf <- mapM (compDes exercisename) modelFiles
+  mInf <- mapM (compSimplNormalised exercisename) modelFiles
   --let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions
   --    match = any ((stProg ~=) . core) mProgs -- is similar to any of the model solutions
   let feedback = mkFeedback stInf mInf

@@ -87,7 +87,7 @@ getHsExprFromLoc rss ps | nonEmpty locExps = return locExps
 
 getHsRhsFromLoc :: RealSrcSpan -> ParsedSource -> Maybe [LHsExpr GhcPs]
 getHsRhsFromLoc rss ps@(L l hsm) | nonEmpty locExDec = return locExDec 
-                                  | otherwise         = Nothing  
+                                 | otherwise         = Nothing  
     where locDecls = catMaybes $ filter isJust $ map (matchRealSpan rss) (hsmodDecls hsm)
           locExDec = [c | ex@(L loc (GRHS a b c)) <- universeBi locDecls :: [GenLocated SrcSpan (GRHS GhcPs (LHsExpr GhcPs))]]
          
@@ -172,9 +172,7 @@ isCaseExpr _          = False
 
 isHoleExpr :: CoreExpr -> Bool
 -- | Check if a case expression is a typed hole expression
-isHoleExpr (Case e _ t _) = case getTypErr e of 
-                                Just pe -> True  -- need to check hasHoleMsg
-                                _ -> False       -- if deferring all type errors
+isHoleExpr (Case e _ t _) = hasHoleMsg e -- need to check hasHoleMsg if deferring all type errors
 isHoleExpr (Tick _ e)     = isHoleExpr e 
 isHoleExpr _              = False                -- and not only typed holes
 
@@ -189,6 +187,11 @@ isPatErrVar :: CoreExpr -> Bool
 isPatErrVar (Var v) = isErrVar "patError" v 
 isPatErrVar _       = False
 
+isTyError :: CoreExpr -> Bool 
+isTyError (Case e _ t _) = case getTypErr e of 
+                          Just _ -> not (hasHoleMsg e) -- check if we have a type error that is not a hole
+isTyError (Tick _ e)     = isTyError e 
+isTyError _              = False  
 
 getHoleMsg :: CoreExpr -> String 
 getHoleMsg e = concat [getLitString l | str@(Lit l) <- universe e, isTypedHolErrMsg l]
@@ -282,7 +285,15 @@ hasHoleMsg :: CoreExpr -> Bool
 hasHoleMsg e = not $ null [l | Lit l <- universe e, isTypedHolErrMsg l]
 
 isTypedHolErrMsg :: Literal -> Bool
-isTypedHolErrMsg (LitString l) = let msg = lines $ utf8DecodeByteString l
-                                 in "hole" `elem` (words (msg !! 1))
+isTypedHolErrMsg (LitString l) = f $ lines $ utf8DecodeByteString l
+    where f ls | length ls > 1 = "hole:" `elem` (words (ls !! 1))
+               | otherwise     = False 
 isTypedHolErrMsg _ = False
 
+isAppToHole :: CoreExpr -> Bool 
+-- | Check if a lambda is applied to a hole
+isAppToHole = \case 
+    (App f args) | isHoleVarExpr args -> True
+    (Tick _ e) -> isAppToHole e 
+    (Lam v e)  -> isAppToHole e 
+    _          -> False 

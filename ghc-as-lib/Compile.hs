@@ -127,6 +127,7 @@ genFlags :: [GeneralFlag]
 genFlags = [
             Opt_DoCoreLinting
            ,Opt_DeferTypedHoles
+           ,Opt_DeferTypeErrors
            ,Opt_DeferDiagnostics
            ,Opt_InfoTableMap
            ,Opt_AutoLinkPackages

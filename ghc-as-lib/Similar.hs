@@ -20,7 +20,7 @@ import GHC.Core.DataCon (DataCon(..), dataConName)
 import GHC.Utils.Outputable (showSDocUnsafe, Outputable (ppr))
 import GHC.Types.Literal (Literal(..), LitNumType)
 
-import Utils ( isHoleVar, sp, isHoleVarExpr, isHoleExpr, isPatError, isPatErrVar, getAltExp, isCaseExpr, nl)
+import Utils ( isHoleVar, sp, isHoleVarExpr, isHoleExpr, isPatError, isPatErrVar, getAltExp, isCaseExpr, nl, isAppToHole)
 import GHC.Core.Coercion (eqCoercion)
 import GHC.Core.Utils (exprType)
 
@@ -44,7 +44,7 @@ instance Similar (Bind Var) where
     (Rec es) ~> (Rec es')          = es ~> es' 
     (NonRec v e) ~> (NonRec v' e') = v ~> v' && e ~> e'
     (NonRec v e) ~> Rec [(v',e')]  = v ~> v' && e ~> e'
-    _ ~> _                         = trace ("different binders?") False
+    _ ~> _                         = False
 
     (Rec es) ~= (Rec es')          = es ~= es'
     (NonRec v e) ~= (NonRec v' e') = v ~= v' && e ~= e'
@@ -61,8 +61,7 @@ instance Similar (Expr Var) where
     (App (App f e) a) ~> (App (App f' e') a') | isCommutative f
                                                , f ~> f' = (e ~> e' && a ~> a') || e ~> a' && e' ~> a
     (App e arg) ~> (App e' arg')            = e ~> e' && arg ~> arg'
-
-    (Lam b e) ~> (Lam b' e')                = b  ~> b' && e ~> e' -- check that the type of the head is equal                                      
+    (Lam b e) ~> (Lam b' e')                = b  ~> b' && e ~> e' 
     (Case e v t as) ~> (Case e' v' t' as')  = e ~> e' && v ~> v' && t  ~> t' && as ~> as'
     e            ~> (Case e' v t as)        = any ((e ~>) . getAltExp) as 
     (Cast e co)  ~> (Cast e' co')           = co ~> co' && e ~> e'
@@ -71,8 +70,7 @@ instance Similar (Expr Var) where
     (Coercion c) ~> (Coercion c')           = c  ~> c'
     (Tick _ e)   ~> e'                      = e ~> e' 
     e            ~> (Tick _ e')             = e ~> e' 
-    x ~> y                                  = trace ("fall through " ++ show x `nl` show y) 
-                                                isHoleVarExpr x || isHoleExpr x 
+    x ~> y                                  = isHoleVarExpr x || isHoleExpr x 
 
     (Var id) ~= (Var id')                  = id ~= id'
     (Type t) ~= (Type t')                  = t ~= t'
@@ -98,25 +96,29 @@ instance Similar Coercion where
 
 
 instance Similar Literal where
-  (LitString l)    ~> (LitString l')   = True -- accept all litstrings instead of replacing lit strings 
-  (LitChar c)      ~> (LitChar c')     = (trace "LITC")c == c'
-  (LitNumber ti i) ~> (LitNumber tj j) = (trace "LITN") ti == tj && i == j
-  (LitFloat f)     ~> (LitFloat f')    = (trace "LITF")f == f'
-  (LitDouble d)    ~> (LitDouble d')   = (trace "LITD")d == d'
-  l ~> k                               = True
+  (LitString l)    ~> (LitString l')      = l == l' 
+  (LitChar c)      ~> (LitChar c')        = c == c'
+  (LitNumber ti i) ~> (LitNumber tj j)    = ti == tj && i == j
+  (LitFloat f)     ~> (LitFloat f')       = f == f'
+  (LitDouble d)    ~> (LitDouble d')      = d == d'
+  (LitLabel _ _ fd) ~> (LitLabel _ _ fd') = fd == fd' 
+  LitNullAddr      ~> LitNullAddr         = True 
+  l ~> k                                  = False 
 
   (~=) = (~>)
 
 instance Similar [Alt Var] where
-    xs ~> ys = all (uncurry (~>)) (zip xs ys)
-    xs ~= ys =  all (uncurry (~=)) (zip xs ys)
+    []     ~> ys = True  -- predecessor relation is a lot more liberal, disregarding order of the list (and missing cases)
+    (x:xs) ~> ys = any (x ~>) ys && xs ~> ys  
+        --all (uncurry (~>)) (zip xs ys)
+    xs ~= ys = all (uncurry (~=)) (zip xs ys) 
+               && length xs == length ys 
 
 instance Similar (Alt Var) where
-    a1@(Alt ac vs e) ~> a2@(Alt ac' vs' e') | isPatError e 
+    (Alt ac vs e) ~> (Alt ac' vs' e') | isPatError e 
                                       , not (isPatError e') = ac ~> ac' && vs ~> vs' -- if pattern error, student has missing cases, we dont check nested cases
                                       | otherwise = compareAll
-                where compareAll = trace ("case alt errors?" ++ show(ac ~> ac' && vs ~> vs' && e ~> e') ++ show a1 ++ show a2 ) 
-                                ac ~> ac' && vs ~> vs' && e ~> e'
+                where compareAll = ac ~> ac' && vs ~> vs' && e ~> e'
     (Alt ac vs e) ~= (Alt ac' vs' e')  = ac ~= ac' && vs ~= vs' && e ~= e'
 
 instance Similar [Var] where
@@ -125,10 +127,10 @@ instance Similar [Var] where
         all (uncurry (~>)) (zip xs ys)
 
 instance Similar AltCon where
-    (DataAlt a) ~> (DataAlt a') = trace ("altcon: " ++ show (a ~> a') ++ show a ++ "," ++ show a') a ~> a'
-    (LitAlt l)  ~> (LitAlt l')  = trace ("litalt: " ++ show (l ~> l')) l ~> l'
+    (DataAlt a) ~> (DataAlt a') = a ~> a'
+    (LitAlt l)  ~> (LitAlt l')  = l ~> l'
     DEFAULT     ~> DEFAULT      = True
-    a           ~> b            = trace ("altcons def: " ++ show a ++ show b) False
+    _           ~> _            = False
     (~=) = (~>)
 
 instance Similar DataCon where
@@ -141,7 +143,7 @@ instance Similar Var where
     v1 ~= v2 = getOccString v1 == getOccString v2
 
 instance Similar Type where
-    k1 ~> k2 = trace ("typeeq" ++ show (show k1 == show k2) ++ show k1 ++ show k2) show k1 == show k2
+    k1 ~> k2 = show k1 == show k2
     (~=) = (~>)
             -- to disregard uniques of typevars from different programs we don't use eqType
             -- using eqType would require same uniques, which we don't have across different compilations
@@ -170,3 +172,12 @@ isCommutative :: CoreExpr -> Bool
 -- not sure how to check this, functions are just variables
 isCommutative (Var op) = getOccString op `elem` ["==", "/=", "+", "*", "&&", "||"] -- hardcode common ones 
 isCommutative _ = False
+
+
+{-  (Lam b e) ~> e'                         | isAppToHole e = match e e'
+                                        where match e e' = case e of 
+                                                (Tick _ e) -> match e e' 
+                                                (Lam v e)  -> match e e' 
+                                                (App f args) | isHoleVarExpr args -> f ~> e' 
+                                                             | otherwise          -> match args e' 
+                                                ex -> trace ("GERE:" ++ show ex ++ "L") False  -}

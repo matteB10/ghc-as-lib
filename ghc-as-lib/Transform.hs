@@ -72,7 +72,7 @@ import GHC.Core.Opt.Arity (etaExpandAT, exprArity, etaExpand, exprEtaExpandArity
 import GHC.Core.Predicate (isEvVar)
 import GHC.Core.Opt.FloatOut ( floatOutwards )
 import GHC.Utils.Logger (initLogger)
-import GHC.Types.Unique.Supply (mkSplitUniqSupply)
+import GHC.Types.Unique.Supply (mkSplitUniqSupply, listSplitUniqSupply)
 import GHC.Core.Type ( Type, Var(..), isLinearType, isTyVar, dropForAlls )
 import GHC.Types.Id (setIdArity, setIdInfo, idDataCon, isDataConId_maybe)
 import Data.ByteString (ByteString)
@@ -83,7 +83,7 @@ import GHC.Types.Tickish (GenTickish(..))
 
 preProcess :: CoreProgram -> IO CoreProgram 
 -- | Preprocessing transformations
-preProcess p = removeModInfo p >>= replaceHoles >>= replacePatErrors  
+preProcess p = removeModInfo p >>= replaceHoles >>= replacePatErrors 
 
 normalise :: String -> CoreProgram -> IO (CoreProgram, Map Var Var) 
 -- | Normalising transformations
@@ -104,18 +104,22 @@ removeModInfo p = return $ concatMap removeModInf p
 
 replaceHoles :: CoreProgram -> IO CoreProgram 
 -- | Replace holes (case typerror) with variables
-replaceHoles = return . repHoles
-    where repHoles :: CoreProgram -> CoreProgram  
-          repHoles = transformBi $ \case
-            c@(Case e v t _)
-                | isHoleExpr c -> let id = fromJust (getTypErr e)
-                                      ty = exprType c
-                                      name = makeName "hole" (getUnique id) (getSrcSpan (varName v))
-                                      id' = setIdInfo (setVarType (setVarName v name) ty) idinf
-                                      idinf = setArityInfo vanillaIdInfo (exprArity e)
-                                   in Var (globaliseId id') -- make global Id since hole could be something from any scope
-                | otherwise -> c
-            e -> e
+replaceHoles p = mkSplitUniqSupply 'H' >>= \us -> return (evalState (repHoles (listSplitUniqSupply us) p) 0)
+    where repHoles :: [UniqSupply] -> CoreProgram -> State Int CoreProgram  
+          repHoles us = transformBiM $ \case
+            c@(Case e v t [])
+                | isHoleExpr c -> do
+                                holecount <- get 
+                                modify $ \s -> s+1
+                                let id = fromJust (getTypErr e)
+                                    ty = exprType c
+                                    uq = uniqFromSupply (us !! holecount) 
+                                    name = makeName ("hole" ++ show holecount) uq (getSrcSpan (varName v))
+                                    id' = setIdInfo (setVarType (setVarName v name) ty) idinf
+                                    idinf = setArityInfo vanillaIdInfo (exprArity e)
+                                return $ Var (globaliseId id') -- make global Id since hole could be something from any scope
+                | otherwise -> return c
+            e -> return e
 
 replacePatErrors :: CoreProgram -> IO CoreProgram 
 -- | Replace pattern errors (case patError) with variables
@@ -138,10 +142,10 @@ etaReduce = return . rewriteBi etaRed
     where etaRed :: CoreExpr ->  Maybe CoreExpr
           {- etaRed (Lam v e) = reduce v e 
           etaRed _         = Nothing  -}
-          etaRed (Lam v (Tick t (App f args)))         | isEtaReducable f args v = return (Tick t f)  
-          etaRed (Lam v (App f args))                  | isEtaReducable f args v = return f
-          etaRed (Lam v (Let b (Tick t (App f args)))) | isEtaReducable f args v = return (Let b (Tick t f))
-          etaRed (Lam v (Let b (App f args)))          | isEtaReducable f args v = return (Let b f)
+          etaRed (Lam v (Tick t (App f args)))         | isEtaReducible f args v = return (Tick t f)  
+          etaRed (Lam v (App f args))                  | isEtaReducible f args v = return f
+          etaRed (Lam v (Let b (Tick t (App f args)))) | isEtaReducible f args v = return (Let b (Tick t f))
+          etaRed (Lam v (Let b (App f args)))          | isEtaReducible f args v = return (Let b f)
           etaRed _ = Nothing 
 
 {- reduce :: Var -> CoreExpr -> Maybe CoreExpr 
@@ -149,26 +153,27 @@ reduce v (Tick _ e)   = reduce v e
 reduce v (Let b e)    = case reduce v e of 
                             Just ex -> return (Let b ex)
                             Nothing -> Nothing 
-reduce v (App f args) | isEtaReducable f args v = return f 
+reduce v (App f args) | isEtaReducible f args v = return f 
 reduce _ _ = Nothing  -}
   
 
-isEtaReducable :: CoreExpr -> CoreExpr -> Var -> Bool
-isEtaReducable f arg v = case arg of
+isEtaReducible :: CoreExpr -> CoreExpr -> Var -> Bool
+isEtaReducible f arg v = case arg of
             Var v' | v == v'
               ,not (isTyVar v)
               ,not (isLinearType (exprType f)) -- don't eta-reduce eta-expanded data constructors (with linear types)
               ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
               ,not (isEvVar v)   -- don't remove evidence variables 
               -> True
-            Tick _ e -> isEtaReducable f e v 
+            Tick _ e -> isEtaReducible f e v 
             _ -> False
 
 
-data VarType = Binder | CaseBind | GenVar
+data VarType = Binder | CaseBind | GenVar  
 
 data St = St {
          env  :: Map.Map Var Var
+        ,topBindCount      :: Int -- to rename all top-level binders separately 
         ,freshCaseBindVar  :: Int
         ,freshVar          :: Int
         ,freshBindVar      :: Int
@@ -179,28 +184,47 @@ type Ctx a = State St a
 
 
 initSt :: St
-initSt = St {env = Map.empty, freshCaseBindVar = 0, freshVar = 0, freshBindVar = 0, exerName = ""}
+initSt = St {env = Map.empty, topBindCount = 0, freshCaseBindVar = 0, freshVar = 0, freshBindVar = 0, exerName = ""}
 
 alphaWCtxt :: String -> CoreProgram -> IO (CoreProgram, Map.Map Var Var)
 -- | Do renaming and return map of renamed variables        
 alphaWCtxt fname cs = return (prog, env state)
     where (prog,state) = runState st (initSt {exerName = fname})
           st = mapM alphaR cs
+          alphaR cb = modify resetState >> alphaB cb 
 
 alpha :: String -> CoreProgram -> IO CoreProgram
 -- | Do renaming and return map of renamed variables        
 alpha fname cs = return $ evalState st (initSt {exerName = fname})
-    where st = mapM alphaR cs
+    where st = mapM alphaB cs
+
+resetState :: St -> St  
+resetState st = st {topBindCount = topBindCount st + 1,
+                    freshCaseBindVar = 0,
+                    freshVar = 0,
+                    freshBindVar = 0}
 
 
-alphaR :: CoreBind -> Ctx CoreBind
+alphaB :: CoreBind -> Ctx CoreBind
+alphaB cb = do  
+    alpha cb 
+    where alpha = \case 
+            (NonRec v e) -> do
+                v' <- renameVar Binder v
+                NonRec v' <$> aRename e
+            (Rec es) -> do
+                vars <- mapM (renameVar Binder . fst) es
+                exps <- mapM (aRename . snd) es
+                return $ Rec (zip vars exps)
+
+{- alphaR :: CoreBind -> Ctx CoreBind
 alphaR (NonRec v e) = do
         v' <- renameVar Binder v
         NonRec v' <$> aRename e
 alphaR (Rec es) = do
         vars <- mapM (renameVar Binder . fst) es
         exps <- mapM (aRename . snd) es
-        return $ Rec (zip vars exps)
+        return $ Rec (zip vars exps) -}
 
 renameVar :: VarType -> Id -> Ctx Id
 renameVar vty v = do
@@ -210,12 +234,13 @@ renameVar vty v = do
                 Just n  -> return n
                 Nothing -> checkNew v name
     where checkNew v n | varNameUnique v == n = return v -- dont rename main function
-                       | isGlobalId v = return v   -- don't rename global ids 
+                      -- | isHoleVar v  = renameV vty v >> return v  -- don't rename hole variables (since we need to know its a hole), but give it a new name in the map
+                       | isGlobalId v = return v   -- don't rename global ids (including holes, since we must keep track of that its a hole)
                        | isTyVar v    = return v   -- don't rename type variables 
                        | isTyCoVar v  = return v
                        | isEvVar v    = return v   -- don't rename evidence variables 
-                       | isHoleVar v  = return v   -- don't rename hole variables, already have fresh names 
                        | otherwise    = renameV vty v   -- otherwise, rename (might need additional checks)
+
 
 renameV :: VarType -> Var -> Ctx Var
 renameV vty v = do
@@ -224,7 +249,7 @@ renameV vty v = do
     modify $ \s -> s {env = Map.insert v v' (env s)} -- update map 
     return v'
 
-getVName :: VarType -> Ctx String
+{- getVName :: VarType -> Ctx String
 getVName CaseBind = do
                 i <- gets freshCaseBindVar
                 modify $ \ s -> s {freshCaseBindVar = i+1}
@@ -236,7 +261,24 @@ getVName Binder = do
 getVName GenVar = do
                 i <- gets freshVar
                 modify $ \ s -> s {freshVar = i+1}
-                return ("v" ++ show i)
+                return ("v" ++ show i) -}
+
+getVName :: VarType -> Ctx String
+getVName vty = do 
+    bc <- gets topBindCount
+    case vty of 
+        CaseBind -> do 
+                i <- gets freshCaseBindVar
+                modify $ \ s -> s {freshCaseBindVar = i+1}
+                return ("cb"++show bc ++ show i)
+        Binder -> do
+                i <- gets freshBindVar
+                modify $ \ s -> s {freshBindVar = i+1}
+                return ("b" ++ show bc ++ show i)
+        GenVar -> do
+                i <- gets freshVar
+                modify $ \ s -> s {freshVar = i+1}
+                return ("v" ++ show bc ++ show i)
 
 
 aRename :: CoreExpr -> Ctx CoreExpr
@@ -261,7 +303,7 @@ aRename (Cast e co)    =
         e' <- aRename e
         return $ Cast e' co
 aRename (Let b e)      = do
-    b' <- alphaR b
+    b' <- alphaB b
     e' <- aRename e
     return $ Let b' e'
 aRename (Tick ct e)    = aRename e >>= \e' -> return (Tick ct e')
@@ -319,12 +361,14 @@ insertBind (Rec ((v,e):es)) bs = map insertR bs
 
 recToLetRec :: CoreProgram -> IO CoreProgram 
 -- | Inline recursive binders as let-recs when appropriate
-recToLetRec p = mkSplitUniqSupply 'H' >>= \ us -> recToLR us p 
-    where recToLR :: UniqSupply -> CoreProgram -> IO CoreProgram
+recToLetRec p = mkSplitUniqSupply 'R' >>= \us -> return (evalState (recToLR (listSplitUniqSupply us) p) 0)
+    where recToLR :: [UniqSupply] -> CoreProgram -> State Int CoreProgram
           recToLR _ [] = return []
           recToLR us (b:bs) = case b of
-            rr@(Rec ((v,e):ls)) -> do -- RECS WITH MORE ITEMS NOT HANDLED
-                            let v' = fresh us v
+            rr@(Rec ((v,e):ls)) -> do 
+                            i <- get
+                            modify $ \s -> s+1 -- state counter for indexing a new unique 
+                            let v' = fresh (us !! i) v
                                 e' = subst v' v e
                                 b' = NonRec v (Let (Rec ((v',e'):ls)) (Var v'))
                             recToLR us bs >>= \bs' -> return $ b':bs 
@@ -519,7 +563,7 @@ floatOut p = do
 
 
 
-addDefaultCase :: CoreProgram -> Ghc CoreProgram
+{- addDefaultCase :: CoreProgram -> Ghc CoreProgram
 addDefaultCase p = do
     env <- getSession
     let ic = hsc_IC env
@@ -537,10 +581,10 @@ addDefCase :: InScopeSet -> CoreBind -> Ghc CoreBind
 addDefCase is (NonRec b e)     | not (hasCase e) && not (isEvOrTyVar b) = (addCase is e) >>= \ex -> return $ NonRec b ex
 addDefCase is (Rec ((b,e):es)) | not (hasCase e) && not (isEvOrTyVar b) = (addCase is e) >>= \ex -> return $ Rec ((b,ex):es)
 addDefCase is b = return b
-                        -- | needsCaseBinding (varType v) e = addCase e v -- rather tests whether
+         -}                -- | needsCaseBinding (varType v) e = addCase e v -- rather tests whether
                                                                        -- needs to use a case rather than let bind
 
-addCase :: InScopeSet -> Expr Var -> Ghc (Expr Var)
+{- addCase :: InScopeSet -> Expr Var -> Ghc (Expr Var)
 addCase is e = do
     let v = getFirstNonTypeLam e
     let t = ft_res $ ft_res (dropForAlls $ exprType e)
@@ -552,9 +596,15 @@ addCase is e = do
           liftLambdas _ ex         = ex
           getFirstNonTypeLam (Lam v e) | isEvOrTyVar v = getFirstNonTypeLam e
                                        | otherwise = v
-          getFirstNonTypeLam ex = error (show ex)
+          getFirstNonTypeLam ex = error (show ex) -}
 
-
+{- removeTyErrors :: CoreProgram -> IO CoreProgram 
+-- | Remove non-hole type errors
+removeTyErrors p = return . rewriteBi remTyErr $ p 
+    where remTyErr (App ex c@(Case {})) | isTyError c = return ex 
+          remTyErr (App c@(Case {}) ex) | isTyError c = return ex 
+          remTyErr _ = Nothing 
+ -}
 {- addDefaultCase :: CoreProgram -> CoreProgram
 addDefaultCase p = evalState (pm p) initSt
     where pm :: CoreProgram -> Ctx CoreProgram

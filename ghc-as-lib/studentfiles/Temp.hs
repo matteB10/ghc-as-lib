@@ -1,23 +1,13 @@
 module Temp where
-elementat :: [a] -> Int -> a
-elementat (x:xs) 0 = x
-elementat (x:xs) y = elementat xs (y - 1)
-{-# RULES
-    "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs
-#-}
+dropevery :: [a] -> Int -> [a]
+dropevery xs n =  _
+{-# RULES "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs #-}
 
-{-# RULES
-    "$/app"   forall a. forall (f :: a -> a) (g :: a -> a) (x :: a).  f $ g x = f (g x)    
-#-}
+{-# RULES "$/app"   forall a. forall (f :: a -> a) (g :: a -> a) (x :: a).  f $ g x = f (g x) #-}
 
+{-# RULES "map/listcomprehension"   forall f xs.  map f xs = [f x | x <- xs] #-}
 
-{-# RULES
-    "map/listcomprehension"   forall f xs.  map f xs = [f x | x <- xs] 
-#-}
-
-{-# RULES
-    "concatmap/concatMap"   forall f xs.  concat (map f xs)  = concatMap f xs 
-#-}
+{-# RULES "concatmap/concatMap"   forall f xs.  concat (map f xs)  = concatMap f xs #-}
 
 {-# RULES "concat.map/concatMap" forall f.  concat . map f = concatMap f #-}
 

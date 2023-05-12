@@ -67,6 +67,7 @@ mkWarnFeedback ws wms = Many (map getwarnings ws) >+> mkModFeedback ws wms
           (GhcWarn (Reason Opt_WarnOverlappingPatterns) _ _ doc) -> OverlappingPat (showSDocUnsafe doc)
           (GhcWarn (ErrReason e) _ _ doc)                        -> Error (showSDocUnsafe doc)
           (GhcWarn (Reason Opt_WarnTypedHoles) _ _ doc)          -> HoleSuggestions (showSDocUnsafe doc)
+          (GhcWarn (Reason Opt_WarnDeferredTypeErrors) _ _ doc)  -> Error (showSDocUnsafe doc)
           (GhcWarn _ _ _ doc)                                    -> HLint (showSDocUnsafe doc) --HLint warnings
           | otherwise = NoWarns
 

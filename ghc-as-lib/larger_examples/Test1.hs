@@ -14,7 +14,8 @@ data BinFunc = Add | Mul
 -- deriving (Eq, Show) 
 
 
-eval :: Expr -> Double -> Double
+{- eval :: Expr -> Double -> Double
 eval  Var x             = x
 eval (Num n) _          = n
 eval _ _                = _ 
+ -}
