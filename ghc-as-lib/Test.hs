@@ -90,8 +90,8 @@ testTcAll f = do
 tcCore :: (CoreProgram, HscEnv) -> IO ()
 tcCore = uncurry typeCheckCore
 
-toTuple :: CompInfo -> IO (CoreProgram, ParsedSource, [Warning], Map Var Var)
-toTuple (CompInfo prog ps ws n) = return (prog,ps,ws,n)
+toTuple :: CompInfo -> IO (CoreProgram, ParsedSource, [Warning], Map Var Var, String)
+toTuple (CompInfo prog ps ws n e) = return (prog,ps,ws,n,e)
 
 compare_pr :: (FilePath -> IO CompInfo) -> Bool -> FilePath -> FilePath -> IO Bool
 compare_pr compile b fp1 fp2 = do
@@ -208,7 +208,7 @@ testItem :: (ExerciseName -> FilePath -> IO CompInfo) -> TestItem -> IO (Bool,Bo
 testItem f ti = do
     writeProg ti
     let exercisename = takeBaseName (exerciseid ti)
-    (stProg,psrc,ws,_) <- toTuple =<< f exercisename "./studentfiles/Temp.hs"  -- student progrm
+    (stProg,psrc,ws,_,_) <- toTuple =<< f exercisename "./studentfiles/Temp.hs"  -- student progrm
     modelFiles <- getFilePaths (msPath ++ exerciseid ti)
     mProgs <- mapM (f exercisename) modelFiles
     let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions

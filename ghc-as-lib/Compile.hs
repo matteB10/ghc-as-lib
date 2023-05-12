@@ -100,6 +100,10 @@ import GHC.Driver.Plugins (PluginWithArgs(..), StaticPlugin(..))
 import GHC.Types.Id (Var)
 import Data.Map ( Map )
 import qualified Data.Map as Map 
+import GHC.LanguageExtensions (Extension(ExtendedDefaultRules))
+
+extFlags :: [Extension]
+extFlags = [ExtendedDefaultRules] 
 
 holeFlags :: [GeneralFlag]
 -- | General flags concerning typed holes 
@@ -161,10 +165,12 @@ setFlags b flags = do
        dflags1 = Prelude.foldl wopt_unset dflags unsetWarnFlags
        dflags2 = Prelude.foldl wopt_set dflags1 setWarnFlags
        gflags = if b then EnumSet.toList (generalFlags dflags2) ++ flags else flags
+       eflags = EnumSet.toList (extensionFlags dflags2) ++ extFlags
        dflags3 = dflags2 {refLevelHoleFits = Just 2,
                           maxValidHoleFits = Just 8,
                           maxRefHoleFits   = Just 10,
-                          generalFlags = EnumSet.fromList gflags}
+                          generalFlags = EnumSet.fromList gflags,
+                          extensionFlags = EnumSet.fromList eflags}
    setSessionDynFlags dflags3 
 
 
@@ -172,7 +178,8 @@ data CompInfo = CompInfo {
     core :: CoreProgram,
     parsed :: ParsedSource,
     warns  :: [Warning],
-    names :: Map Var Var 
+    names :: Map Var Var, 
+    exercise :: String
 }
 
 loadWithPlugins :: GhcMonad m => DynFlags -> Target -> [StaticPlugin] -> m SuccessFlag
@@ -233,7 +240,7 @@ compSimplNormalised name fp = runGhc (Just libdir) $ do
   (prog,psrc,ref) <- toSimplify fp 
   (prog',names) <- liftIO $ normalise name prog 
   ws <- liftIO (readIORef ref)
-  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws) names 
+  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws) names name 
 
 compDesNormalised :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile a file to normalised Core without simplifier
@@ -241,21 +248,21 @@ compDesNormalised name fp = runGhc (Just libdir) $ do
   (prog,psrc,ref) <- toDesugar fp 
   (prog', names) <- liftIO $ normalise name prog
   ws <- liftIO (readIORef ref)
-  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws) names 
+  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws) names name 
 
 compSimpl :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile to simplified core directly, return renamed program and warnings
-compSimpl _ fp = runGhc (Just libdir) $ do
+compSimpl name fp = runGhc (Just libdir) $ do
   (prog,psrc,ref) <- toSimplify fp
   ws <- liftIO $ readIORef ref  
-  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws) Map.empty 
+  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws) Map.empty name 
 
 compDes :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile to desugared core directly, return renamed program and warnings
-compDes _ fp = runGhc (Just libdir) $ do
+compDes name fp = runGhc (Just libdir) $ do
   (prog,psrc,ref) <- toDesugar fp 
   ws <- liftIO $ readIORef ref
-  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws) Map.empty 
+  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws) Map.empty name 
 
 
 --- For testing purposes 

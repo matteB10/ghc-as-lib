@@ -17,14 +17,14 @@ import Analyse (hasRedundantPattern)
 import Diff ((~~))
 import Utils
 
-data Feedback = Complete Feedback
-              | NoWarns
+data Feedback = NoWarns
+              | Complete Feedback
               | Ontrack Feedback
+              | Unknown Feedback
               | IncompletePat String
               | OverlappingPat String
               | RedundantPat String
               | HLint String
-              | Unknown Feedback
               | HoleSuggestions String
               | HoleMatches String
               | Error String
@@ -50,13 +50,14 @@ mkFeedback :: CompInfo -> [CompInfo] -> Feedback
 mkFeedback s ms | isSimilarTo (~=) s ms             = Complete warnfb -- add HLint warnings maybe?
                 | isSimilarTo (~>) s ms 
                 , not (hasOverlappingPat s)
-                , not (hasUnmatchedModelWarns s ms) = Ontrack $ warnfb >+> holefb -- if overlapping, we cannot know if student on track or not
+                , not (hasUnmatchedModelWarns s ms) = Ontrack $ typefb >+> warnfb >+> holefb -- if overlapping, we cannot know if student on track or not
                 | isSimilarTo (~>) s ms 
-                , hasUnmatchedModelWarns s ms       = Unknown $ warnfb >+> holefb 
-                | otherwise                         = Unknown warnfb
+                , hasUnmatchedModelWarns s ms       = Unknown $ typefb >+> warnfb >+> holefb 
+                | otherwise                         = Unknown $ typefb >+> warnfb
     where m = getClosest s ms  
           warnfb = mkWarnFeedback (warns s) (warns m)
           holefb = mkHoleFeedback s m 
+          typefb = mkTypSigFeedback s m 
          
 
 mkWarnFeedback :: [Warning] -> [Warning] -> Feedback
@@ -76,6 +77,18 @@ mkModFeedback ::[Warning] -> [Warning] -> Feedback
 mkModFeedback sws mws = Many $ map go (mws \\ sws)
   where go (GhcWarn (Reason Opt_WarnIncompletePatterns) _ _ doc)  = General "The exercise is a partial function, however your solution is defined on all possible input"
         go (GhcWarn _ _ _ doc)                                    = NoWarns -- don't care about other warns in model solutions 
+
+
+mkTypSigFeedback :: CompInfo -> CompInfo -> Feedback
+mkTypSigFeedback s m | hasTypSig ex ps 
+                     , not $ mainTypeSigMatches ex ps pm = 
+        Error $ "Given type signature " ++ showGhcUnsafe (getSigs ps) ++ " does not match the specified type of the exercise."
+                     | otherwise = NoWarns -- if lacks signature we will probably run into other type errors 
+              where ps = parsed s  
+                    pm = parsed m 
+                    ex = exercise s 
+
+
 
 isSimilarTo :: (CoreProgram -> CoreProgram -> Bool) -> CompInfo -> [CompInfo] -> Bool
 isSimilarTo f student models = any ((core student `f`) . core) models

@@ -1,11 +1,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
-module Utils where 
+module Utils where
 
 
 -- GHC imports 
-import GHC ( DynFlags, TyCon, Type, SrcSpan, Name, Id, RealSrcLoc, ParsedSource, LHsExpr, HsDecl (..), GhcPs, HsModule (..), getLocA, Located, SrcSpanAnnA, GRHSs (..), GRHS (GRHS), HsExpr (HsVar) )
+import GHC ( DynFlags, TyCon, Type, SrcSpan, Name, Id, RealSrcLoc, ParsedSource, LHsExpr, HsDecl (..), GhcPs, HsModule (..), getLocA, Located, SrcSpanAnnA, GRHSs (..), GRHS (GRHS), HsExpr (HsVar), LHsDecl, unLoc, Sig )
 import GHC.Plugins
     ( Alt(Alt),
       AnonArgFlag(VisArg),
@@ -20,7 +20,7 @@ import GHC.Plugins
       fsLit,
       showPpr,
       getOccString,
-      tyVarKind, showSDoc, showSDocUnsafe, isTyVar, Unique, mkGlobalVar, mkInternalName, mkOccName, mkGeneralSrcSpan, mkFastString, vanillaIdInfo, UniqSupply, uniqFromSupply, setIdNotExported, setVarName, mkLocalId ) 
+      tyVarKind, showSDoc, showSDocUnsafe, isTyVar, Unique, mkGlobalVar, mkInternalName, mkOccName, mkGeneralSrcSpan, mkFastString, vanillaIdInfo, UniqSupply, uniqFromSupply, setIdNotExported, setVarName, mkLocalId )
 import GHC.Core.TyCo.Rep
     ( TyLit(StrTyLit),
       Type(TyConApp, LitTy, AppTy, FunTy, CastTy, ft_af, ft_arg, ft_res,
@@ -29,11 +29,11 @@ import GHC.Utils.Encoding (utf8DecodeByteString)
 
 -- General imports 
 import Data.Maybe ( isNothing, fromJust, catMaybes, isJust )
-import Data.Generics.Uniplate.Data  
+import Data.Generics.Uniplate.Data
 import Control.Monad (when)
 
 -- Local imports 
-import Instance 
+import Instance
 import GHC.Utils.Outputable
 import GHC.Core (CoreExpr, CoreBind, isId)
 import GHC.Core.Predicate (isEvVar)
@@ -44,17 +44,18 @@ import GHC (GenLocated(..), RealSrcSpan, ParsedModule, Ghc)
 import GHC.Hs (HsMatchContext(..))
 import GHC.Types.SrcLoc (srcSpanToRealSrcSpan)
 import Data.Map (Map)
-import qualified Data.Map as Map 
+import qualified Data.Map as Map
+import Data.Text.Lazy (splitOn)
 
-type ExerciseName = String 
+type ExerciseName = String
 
 
 showGhc :: (Outputable a) => DynFlags -> a -> String
 -- | Pretty print ghc stuff 
-showGhc = showPpr 
+showGhc = showPpr
 
-showGhcUnsafe :: (Outputable a) => a -> String  
-showGhcUnsafe = showSDocUnsafe . ppr 
+showGhcUnsafe :: (Outputable a) => a -> String
+showGhcUnsafe = showSDocUnsafe . ppr
 
 printGhc :: (Outputable a) => a -> IO ()
 printGhc = putStrLn . showGhcUnsafe
@@ -68,62 +69,93 @@ sp x y = x ++ " " ++ y
 nl x y = x ++ "\n" ++ y
 cm x y = x ++ " , " ++ y
 
-hasTypSig :: ParsedSource -> Bool 
--- | Check if a type signature is explicitely declared 
-hasTypSig (L l hsm) = any isSigD (hsmodDecls hsm)
-      where isSigD = \case 
-             (L _ (SigD _ _)) -> True 
-             _                -> False 
+strip :: String -> String
+strip = lstrip . rstrip
 
-nonEmpty :: [a] -> Bool 
-nonEmpty = not . null 
+lstrip :: String -> String
+lstrip [] = []
+lstrip (x:xs) | x `elem` chars = lstrip xs
+              | otherwise      = x:xs
+
+rstrip :: String -> String
+rstrip = reverse . lstrip . reverse
+
+chars :: String
+chars = " \t\r\n"
+
+hasTypSig :: String -> ParsedSource -> Bool
+-- | Check if a type signature is explicitely declared for 
+-- the main function of the exercise 
+hasTypSig s ps = s `elem` concatMap (words . showGhcUnsafe) (getSigs ps)
+
+getDecls :: ParsedSource -> [LHsDecl GhcPs]
+getDecls (L l hsm) = hsmodDecls hsm
+
+getSigs :: ParsedSource -> [Sig GhcPs]
+getSigs ps = map ((\(SigD nf x) -> x) . unLoc) $ filter isSigD (getDecls ps)
+    where isSigD = \case
+             (L _ (SigD _ _)) -> True
+             _                -> False
+
+
+mainTypeSigMatches :: String -> ParsedSource -> ParsedSource -> Bool
+-- | An (ugly) comparison checking if type signature matches model solution 
+mainTypeSigMatches fun sps mps = nonEmpty studfuns && (head studfuns == head modFuns)
+    where studfuns = filter ((== fun) . fst) (map splitSig $ getSigs sps)
+          modFuns  = filter ((== fun) . fst) (map splitSig $ getSigs mps)
+          splitSig s = let funname = strip $ takeWhile (/= ':') (showGhcUnsafe s)
+                           funtype = strip $ drop (length funname + 2) (showGhcUnsafe s)
+                        in (funname,funtype)
+
+nonEmpty :: [a] -> Bool
+nonEmpty = not . null
 
 getHsExprFromLoc :: RealSrcSpan -> ParsedSource -> Maybe [LHsExpr GhcPs]
-getHsExprFromLoc rss ps | nonEmpty locExps = return locExps 
-                        | otherwise        = Nothing 
+getHsExprFromLoc rss ps | nonEmpty locExps = return locExps
+                        | otherwise        = Nothing
     where exps     = universeBi ps :: [LHsExpr GhcPs]
-          locExps  = catMaybes $ filter isJust $ map (matchRealSpan rss) exps 
+          locExps  = catMaybes $ filter isJust $ map (matchRealSpan rss) exps
 
 
 getHsRhsFromLoc :: RealSrcSpan -> ParsedSource -> Maybe [LHsExpr GhcPs]
-getHsRhsFromLoc rss ps@(L l hsm) | nonEmpty locExDec = return locExDec 
-                                 | otherwise         = Nothing  
+getHsRhsFromLoc rss ps@(L l hsm) | nonEmpty locExDec = return locExDec
+                                 | otherwise         = Nothing
     where locDecls = catMaybes $ filter isJust $ map (matchRealSpan rss) (hsmodDecls hsm)
           locExDec = [c | ex@(L loc (GRHS a b c)) <- universeBi locDecls :: [GenLocated SrcSpan (GRHS GhcPs (LHsExpr GhcPs))]]
-         
-          
+
+
 matchRealSpan :: RealSrcSpan -> GenLocated SrcSpanAnnA a -> Maybe (GenLocated SrcSpanAnnA a)
 matchRealSpan rss ex = case srcSpanToRealSrcSpan (getLocA ex) of
-              (Just realspan) | realspan == rss -> Just ex 
+              (Just realspan) | realspan == rss -> Just ex
               _                                 -> Nothing
 
-mapVar2Str :: Map Var Var -> Map String String 
+mapVar2Str :: Map Var Var -> Map String String
 -- | Convert a map of variables to a map with their occurence names 
 mapVar2Str m = Map.mapKeys getOccString (Map.map getOccString m)
 
-translateNames :: Map Var Var -> Map Var Var -> Map String String 
+translateNames :: Map Var Var -> Map Var Var -> Map String String
 -- | Create a translation map from model variable names to student variable names 
-translateNames studMap modMap = Map.fromList (map go modList) 
+translateNames studMap modMap = Map.fromList (map go modList)
     where modList  = Map.toList (mapVar2Str modMap)
           studMapFlipped = keysToVals (mapVar2Str studMap)
           go :: (String, String) -> (String, String)
-          go (m_src,m_new) = case Map.lookup m_new studMapFlipped of 
+          go (m_src,m_new) = case Map.lookup m_new studMapFlipped of
             Just s_src -> (m_src, s_src)
             Nothing -> (m_src,"unknown") -- should preferably never happen 
 
-keysToVals :: Map String String -> Map String String 
-keysToVals mp = Map.fromList (zip vals keys) 
-   where keys = Map.keys mp 
-         vals = Map.elems mp 
+keysToVals :: Map String String -> Map String String
+keysToVals mp = Map.fromList (zip vals keys)
+   where keys = Map.keys mp
+         vals = Map.elems mp
 
 substHs :: Map String String -> LHsExpr GhcPs -> LHsExpr GhcPs
-substHs names = rewriteBi $ \e -> case e :: LHsExpr GhcPs of 
+substHs names = rewriteBi $ \e -> case e :: LHsExpr GhcPs of
         L l (HsVar a b) -> return $ L l (HsVar a b) -- this function does absolutely nothing right now
         ex              -> return ex                -- must figure out how to rename HsVars 
 
 
-fresh :: UniqSupply -> Var -> Var 
-fresh us id = 
+fresh :: UniqSupply -> Var -> Var
+fresh us id =
     let uq = uniqFromSupply us
         name = makeName "fresh" uq (mkGeneralSrcSpan (mkFastString "Dummy location"))
         id'  = setIdNotExported $ makeLocal $ setVarName id name -- reuse id information from top-level binder
@@ -139,13 +171,13 @@ makeLocal :: Var -> Var
 makeLocal v | isId v = mkLocalId (varName v) (varMult v) (varType v)
 
 
-makeGlobVar :: Unique -> Type -> String -> Var 
+makeGlobVar :: Unique -> Type -> String -> Var
 makeGlobVar uq t n = mkGlobalVar id_det name t id_inf
         where id_det = VanillaId
               name   = mkInternalName uq (mkOccName Occ.varName n) (mkGeneralSrcSpan (mkFastString ("Loc " ++ n)))
               id_inf = vanillaIdInfo
 
-varNameUnique :: Var -> String 
+varNameUnique :: Var -> String
 varNameUnique = showSDocUnsafe . ppr
 
 updateVar :: Var -> CoreBind -> CoreBind
@@ -165,35 +197,35 @@ getBinds :: [CoreBind] -> Var -> [CoreBind]
 getBinds binds v = [r | r <- binds, v `insB` r]
 
 
-isCaseExpr :: CoreExpr -> Bool 
-isCaseExpr (Case {})  = True 
-isCaseExpr (Tick _ e) = isCaseExpr e 
-isCaseExpr _          = False 
+isCaseExpr :: CoreExpr -> Bool
+isCaseExpr (Case {})  = True
+isCaseExpr (Tick _ e) = isCaseExpr e
+isCaseExpr _          = False
 
 isHoleExpr :: CoreExpr -> Bool
 -- | Check if a case expression is a typed hole expression
 isHoleExpr (Case e _ t _) = hasHoleMsg e -- need to check hasHoleMsg if deferring all type errors
-isHoleExpr (Tick _ e)     = isHoleExpr e 
+isHoleExpr (Tick _ e)     = isHoleExpr e
 isHoleExpr _              = False                -- and not only typed holes
 
-isPatError :: CoreExpr -> Bool 
-isPatError (Case e _ t _) = case getPatErr e of 
-                                Just pe -> True 
-                                _ -> False 
-isPatError (Tick _ e)     = isPatError e 
-isPatError e              = isPatErrVar e 
+isPatError :: CoreExpr -> Bool
+isPatError (Case e _ t _) = case getPatErr e of
+                                Just pe -> True
+                                _ -> False
+isPatError (Tick _ e)     = isPatError e
+isPatError e              = isPatErrVar e
 
-isPatErrVar :: CoreExpr -> Bool 
-isPatErrVar (Var v) = isErrVar "patError" v 
+isPatErrVar :: CoreExpr -> Bool
+isPatErrVar (Var v) = isErrVar "patError" v
 isPatErrVar _       = False
 
-isTyError :: CoreExpr -> Bool 
-isTyError (Case e _ t _) = case getTypErr e of 
+isTyError :: CoreExpr -> Bool
+isTyError (Case e _ t _) = case getTypErr e of
                           Just _ -> not (hasHoleMsg e) -- check if we have a type error that is not a hole
-isTyError (Tick _ e)     = isTyError e 
-isTyError _              = False  
+isTyError (Tick _ e)     = isTyError e
+isTyError _              = False
 
-getHoleMsg :: CoreExpr -> String 
+getHoleMsg :: CoreExpr -> String
 getHoleMsg e = concat [getLitString l | str@(Lit l) <- universe e, isTypedHolErrMsg l]
 
 isHoleVar :: Var -> Bool
@@ -202,23 +234,23 @@ isHoleVar v = take 4 (getOccString v) == "hole"
 isHoleVarExpr :: CoreExpr -> Bool
 isHoleVarExpr (Var v)    = isHoleVar v
 isHoleVarExpr (Tick _ e) = isHoleVarExpr e -- any expression might be wrapped in ticks   
-isHoleVarExpr _ = False 
+isHoleVarExpr _ = False
 
-isEvOrTyVar :: Var -> Bool 
-isEvOrTyVar v = isTyVar v || isEvVar v 
+isEvOrTyVar :: Var -> Bool
+isEvOrTyVar v = isTyVar v || isEvVar v
 
-isEvOrTyExp :: CoreExpr -> Bool 
+isEvOrTyExp :: CoreExpr -> Bool
 -- | Is type or type/evidence variable
-isEvOrTyExp e = case e of   
-    (Var v)  -> isEvOrTyVar v 
+isEvOrTyExp e = case e of
+    (Var v)  -> isEvOrTyVar v
     (Type t) -> True
-    _        -> False 
+    _        -> False
 
 isTyOrTyVar :: CoreExpr -> Bool
-isTyOrTyVar (Type _)   = True 
-isTyOrTyVar (Var v)    = isTyVar v 
-isTyOrTyVar (Tick _ e) = isTyOrTyVar e 
-isTyOrTyVar _          = False 
+isTyOrTyVar (Type _)   = True
+isTyOrTyVar (Var v)    = isTyVar v
+isTyOrTyVar (Tick _ e) = isTyOrTyVar e
+isTyOrTyVar _          = False
 
 ins :: Data (Bind Var) => Var -> CoreExpr -> Bool
 -- | Find if a variable is used somewhere in an expression
@@ -241,19 +273,19 @@ sub v v' = \case
 subE :: CoreExpr -> Var -> CoreExpr -> CoreExpr
 -- | Replace the variable with an expression 
 subE e v = transformBi $ \case
-    (Var id) | id == v -> e 
+    (Var id) | id == v -> e
     e -> e
 
-getAltExp :: Alt Var -> CoreExpr 
-getAltExp (Alt _ _ e) = e 
+getAltExp :: Alt Var -> CoreExpr
+getAltExp (Alt _ _ e) = e
 
-getLitString :: Literal -> String 
-getLitString (LitString l) = utf8DecodeByteString l 
+getLitString :: Literal -> String
+getLitString (LitString l) = utf8DecodeByteString l
 
 getTypErr :: CoreExpr-> Maybe Var
-getTypErr = getVarFromName "typeError" 
+getTypErr = getVarFromName "typeError"
 
-getPatErr :: CoreExpr-> Maybe Var 
+getPatErr :: CoreExpr-> Maybe Var
 getPatErr = getVarFromName "patError"
 
 getTypErrB :: CoreBind -> Maybe Var
@@ -265,7 +297,7 @@ getTypErrB (Rec es) = case filter isNothing errs of
 
 
 getVarFromName :: String -> CoreExpr-> Maybe Var
-getVarFromName name e | null vars = Nothing 
+getVarFromName name e | null vars = Nothing
                       | otherwise = head vars -- just return first found variable if any matching  
     where vars = [Just v | (Var v) <- universe e, getOccString v == name]
 
@@ -276,24 +308,24 @@ isVar (Tick _ e) = isVar e
 isVar _          = False
 
 isErrVar :: String -> Var -> Bool
-isErrVar s v = getOccString v == s 
+isErrVar s v = getOccString v == s
 
 isVarMod :: Var -> Bool
 isVarMod v = "$trModule" == take 9 (getOccString v)
 
-hasHoleMsg :: CoreExpr -> Bool 
+hasHoleMsg :: CoreExpr -> Bool
 hasHoleMsg e = not $ null [l | Lit l <- universe e, isTypedHolErrMsg l]
 
 isTypedHolErrMsg :: Literal -> Bool
 isTypedHolErrMsg (LitString l) = f $ lines $ utf8DecodeByteString l
     where f ls | length ls > 1 = "hole:" `elem` (words (ls !! 1))
-               | otherwise     = False 
+               | otherwise     = False
 isTypedHolErrMsg _ = False
 
-isAppToHole :: CoreExpr -> Bool 
+isAppToHole :: CoreExpr -> Bool
 -- | Check if a lambda is applied to a hole
-isAppToHole = \case 
+isAppToHole = \case
     (App f args) | isHoleVarExpr args -> True
-    (Tick _ e) -> isAppToHole e 
-    (Lam v e)  -> isAppToHole e 
-    _          -> False 
+    (Tick _ e) -> isAppToHole e
+    (Lam v e)  -> isAppToHole e
+    _          -> False
