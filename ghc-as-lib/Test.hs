@@ -39,7 +39,7 @@ import GHC.Driver.Session (programName, WarningFlag (..), WarnReason (..))
 import GHC.Plugins 
 import Warning ( Warning(reason) ) 
 import Feedback
-    ( Feedback, mkFeedback, isMatch, isOnTrack ) 
+    ( Feedback, mkFeedback, isMatch, isOnTrack, getClosest ) 
 import Options.Applicative.Common (runParser)
 import Language.Haskell.GHC.ExactPrint.Parsers (parseDecl)
 import Data.Map (Map)
@@ -295,11 +295,15 @@ analyseItems jsonfile = do
 
 analyse' :: TestItem -> IO Feedback
 analyse' ti = do
-  writeProg ti
+  writeInput (input ti)
   let exercisename = takeBaseName (exerciseid ti)
-  stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
+  hasTypSig <- checkTypeSig "./studentfiles/Temp.hs" exercisename
   modelFiles <- getFilePaths (msPath ++ (exerciseid ti))
   mInf <- mapM (compSimplNormalised exercisename) modelFiles
+  typsig <- parseExerciseTypSig (head modelFiles) exercisename
+  unless hasTypSig (writeProg (ti {typesig = typsig}))
+  stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
+  
   --let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions
   --    match = any ((stProg ~=) . core) mProgs -- is similar to any of the model solutions
   let feedback = mkFeedback stInf mInf
@@ -316,6 +320,8 @@ analyse input exercise = do
   stInfo <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
   modelFiles <- getFilePaths (msPath ++ exercise)
   modInfo <- mapM (compSimplNormalised exercisename) modelFiles
+  let clos = getClosest stInfo modInfo
+  putStrLn $ "Closest match\n" ++ show (core clos )
   {- let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions
       match = any ((stProg ~=) . core) mProgs -- is similar to any of the model solutions
       modProgFiles = zip (map core mProgs) modelFiles

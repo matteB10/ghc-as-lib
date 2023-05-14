@@ -37,7 +37,7 @@ import GHC
       reLocA,
       realSrcSpan,
       la2r,
-      LoadHowMuch (LoadAllTargets), TypecheckedModule (..), TypecheckedSource, GhcTc, HsExpr (HsApp, HsUnboundVar), noLocA, GenLocated (L), LHsExpr, DesugaredModule (dm_core_module), ParsedSource, GhcPs, ParsedModule (pm_parsed_source), MapXRec (mapXRec), SrcSpan (RealSrcSpan), SrcSpanAnnA, SrcSpanAnn' (SrcSpanAnn), Target, SuccessFlag, srcLocFile, ParsedMod (parsedSource))
+      LoadHowMuch (LoadAllTargets), TypecheckedModule (..), TypecheckedSource, GhcTc, HsExpr (HsApp, HsUnboundVar), noLocA, GenLocated (L), LHsExpr, DesugaredModule (dm_core_module), ParsedSource, GhcPs, ParsedModule (pm_parsed_source), MapXRec (mapXRec), SrcSpan (RealSrcSpan), SrcSpanAnnA, SrcSpanAnn' (SrcSpanAnn), Target, SuccessFlag, srcLocFile, ParsedMod (parsedSource), ModSummary)
 import GHC.Paths (libdir)
 import GHC.Driver.Session
     ( DynFlags(..),
@@ -101,6 +101,8 @@ import GHC.Types.Id (Var)
 import Data.Map ( Map )
 import qualified Data.Map as Map 
 import GHC.LanguageExtensions (Extension(ExtendedDefaultRules))
+import GHC.Tc.Utils.Env (getTypeSigNames)
+import Control.Lens (generateSignatures)
 
 extFlags :: [Extension]
 extFlags = [ExtendedDefaultRules] 
@@ -195,9 +197,26 @@ loadWithPlugins dflags t the_plugins = do
       setSessionDynFlags dflags { outputFile_ = Nothing }
       load LoadAllTargets
 
-toDesugar' :: Bool -> [GeneralFlag] -> FilePath -> Ghc (ModGuts, ParsedSource, IORef [Warning])
--- | Compile a file to the desugar pass + simple optimiser and return Modguts and warnings
-toDesugar' setdefaultFlags flags fp = do
+parseExerciseTypSig :: FilePath -> ExerciseName -> IO String 
+-- | Parse exercise type signature 
+parseExerciseTypSig fp  name = runGhc (Just libdir) $ do 
+    initEnv True (holeFlags ++ genFlags) fp 
+    modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
+    pmod <- parseModule modSum 
+    let sig = getSig name (pm_parsed_source pmod)
+    return (showGhcUnsafe sig)
+
+checkTypeSig :: FilePath -> String -> IO Bool
+-- | Check type sig before continuing compilation
+checkTypeSig fp ename = runGhc (Just libdir) $ do 
+    initEnv True (holeFlags ++ genFlags) fp 
+    modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
+    pmod <- parseModule modSum 
+    return $ hasTypSig ename (pm_parsed_source pmod)
+    
+
+initEnv :: Bool -> [GeneralFlag] -> FilePath -> Ghc (IORef [Warning])
+initEnv setdefaultFlags flags fp = do 
   env <- getSession
   setFlags setdefaultFlags flags 
   ref <- liftIO (newIORef [])
@@ -209,7 +228,12 @@ toDesugar' setdefaultFlags flags fp = do
             { paArguments = [],
               paPlugin = plugin -- hlint plugin
             }] 
-  
+  return ref 
+
+toDesugar' :: Bool -> [GeneralFlag] -> FilePath -> Ghc (ModGuts, ParsedSource, IORef [Warning])
+-- | Compile a file to the desugar pass + simple optimiser and return Modguts and warnings
+toDesugar' setdefaultFlags flags fp = do
+  ref <- initEnv setdefaultFlags flags fp 
   modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
   pmod <- parseModule modSum 
   tmod <- typecheckModule pmod 

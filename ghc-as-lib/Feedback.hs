@@ -82,7 +82,10 @@ mkModFeedback sws mws = Many $ map go (mws \\ sws)
 mkTypSigFeedback :: CompInfo -> CompInfo -> Feedback
 mkTypSigFeedback s m | hasTypSig ex ps 
                      , not $ mainTypeSigMatches ex ps pm = 
-        Error $ "Given type signature " ++ showGhcUnsafe (getSigs ps) ++ " does not match the specified type of the exercise."
+        Error $ "Given type signature " ++
+                 showGhcUnsafe (getSigs ps) ++ 
+                 " does not match the specified type of the exercise " ++
+                 showGhcUnsafe (getSigs pm)
                      | otherwise = NoWarns -- if lacks signature we will probably run into other type errors 
               where ps = parsed s  
                     pm = parsed m 
