@@ -169,7 +169,7 @@ isEtaReducible f arg v = case arg of
             _ -> False
 
 
-data VarType = Binder | CaseBind | GenVar  
+data VarType = TopBind | CaseBind | GenVar | LamVar
 
 data St = St {
          env  :: Map.Map Var Var
@@ -177,6 +177,7 @@ data St = St {
         ,freshCaseBindVar  :: Int
         ,freshVar          :: Int
         ,freshBindVar      :: Int
+        ,freshLamVar       :: Int 
         ,exerName  :: String
         }
 
@@ -184,7 +185,7 @@ type Ctx a = State St a
 
 
 initSt :: St
-initSt = St {env = Map.empty, topBindCount = 0, freshCaseBindVar = 0, freshVar = 0, freshBindVar = 0, exerName = ""}
+initSt = St {env = Map.empty, topBindCount = 0, freshCaseBindVar = 0, freshVar = 0, freshBindVar = 0, freshLamVar = 0, exerName = ""}
 
 alphaWCtxt :: String -> CoreProgram -> IO (CoreProgram, Map.Map Var Var)
 -- | Do renaming and return map of renamed variables        
@@ -210,21 +211,12 @@ alphaB cb = do
     alpha cb 
     where alpha = \case 
             (NonRec v e) -> do
-                v' <- renameVar Binder v
+                v' <- renameVar TopBind v
                 NonRec v' <$> aRename e
             (Rec es) -> do
-                vars <- mapM (renameVar Binder . fst) es
+                vars <- mapM (renameVar TopBind . fst) es
                 exps <- mapM (aRename . snd) es
                 return $ Rec (zip vars exps)
-
-{- alphaR :: CoreBind -> Ctx CoreBind
-alphaR (NonRec v e) = do
-        v' <- renameVar Binder v
-        NonRec v' <$> aRename e
-alphaR (Rec es) = do
-        vars <- mapM (renameVar Binder . fst) es
-        exps <- mapM (aRename . snd) es
-        return $ Rec (zip vars exps) -}
 
 renameVar :: VarType -> Id -> Ctx Id
 renameVar vty v = do
@@ -233,13 +225,12 @@ renameVar vty v = do
             case Map.lookup v env of
                 Just n  -> return n
                 Nothing -> checkNew v name
-    where checkNew v n | varNameUnique v == n = return v -- dont rename main function
-                      -- | isHoleVar v  = renameV vty v >> return v  -- don't rename hole variables (since we need to know its a hole), but give it a new name in the map
-                       | isGlobalId v = return v   -- don't rename global ids (including holes, since we must keep track of that its a hole)
-                       | isTyVar v    = return v   -- don't rename type variables 
-                       | isTyCoVar v  = return v
-                       | isEvVar v    = return v   -- don't rename evidence variables 
-                       | otherwise    = renameV vty v   -- otherwise, rename (might need additional checks)
+    where checkNew v n | varNameUnique v == n -- dont rename main function
+                         || isGlobalId v      -- don't rename global ids (including holes, since we must keep track of that its a hole)
+                         || isTyVar v         -- don't rename type variables 
+                         || isTyCoVar v  
+                         || isEvVar v   = return v     -- don't rename evidence variables 
+                       | otherwise    = renameV vty v   -- otherwise, rename
 
 
 renameV :: VarType -> Var -> Ctx Var
@@ -249,20 +240,6 @@ renameV vty v = do
     modify $ \s -> s {env = Map.insert v v' (env s)} -- update map 
     return v'
 
-{- getVName :: VarType -> Ctx String
-getVName CaseBind = do
-                i <- gets freshCaseBindVar
-                modify $ \ s -> s {freshCaseBindVar = i+1}
-                return ("cb"++show i)
-getVName Binder = do
-                i <- gets freshBindVar
-                modify $ \ s -> s {freshBindVar = i+1}
-                return ("b" ++ show i)
-getVName GenVar = do
-                i <- gets freshVar
-                modify $ \ s -> s {freshVar = i+1}
-                return ("v" ++ show i) -}
-
 getVName :: VarType -> Ctx String
 getVName vty = do 
     bc <- gets topBindCount
@@ -271,7 +248,7 @@ getVName vty = do
                 i <- gets freshCaseBindVar
                 modify $ \ s -> s {freshCaseBindVar = i+1}
                 return ("cb"++show bc ++ show i)
-        Binder -> do
+        TopBind -> do
                 i <- gets freshBindVar
                 modify $ \ s -> s {freshBindVar = i+1}
                 return ("b" ++ show bc ++ show i)
@@ -279,6 +256,10 @@ getVName vty = do
                 i <- gets freshVar
                 modify $ \ s -> s {freshVar = i+1}
                 return ("v" ++ show bc ++ show i)
+        LamVar -> do
+                i <- gets freshLamVar
+                modify $ \ s -> s {freshLamVar = i+1}
+                return ("l" ++ show bc ++ show i)
 
 
 aRename :: CoreExpr -> Ctx CoreExpr
@@ -290,7 +271,7 @@ aRename (App e arg)    = do
         arg' <- aRename arg
         return $ App e' arg'
 aRename l@(Lam b e)      = do --  trace ("Lambda var:" ++ show b ++ " isTyVar: " ++ show (isTyVar b)) $
-        b' <- renameVar GenVar b
+        b' <- renameVar LamVar b
         e' <- aRename e
         return $ Lam b' e'
 aRename c@(Case e v t a) = do
@@ -561,6 +542,13 @@ floatOut p = do
     us <- liftIO $ mkSplitUniqSupply 'z'
     liftIO $ floatOutwards logger floatSw df us p
 
+
+removeTicks :: CoreProgram -> CoreProgram 
+removeTicks = rewriteBi remTick 
+    where remTick :: CoreExpr -> Maybe CoreExpr 
+          remTick ex = case ex of 
+            (Tick _ e) -> Just e 
+            e -> Nothing 
 
 
 {- addDefaultCase :: CoreProgram -> Ghc CoreProgram
