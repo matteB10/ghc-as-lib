@@ -5,7 +5,7 @@ module Utils where
 
 
 -- GHC imports 
-import GHC ( DynFlags, TyCon, Type, SrcSpan, Name, Id, RealSrcLoc, ParsedSource, LHsExpr, HsDecl (..), GhcPs, HsModule (..), getLocA, Located, SrcSpanAnnA, GRHSs (..), GRHS (GRHS), HsExpr (HsVar), LHsDecl, unLoc, Sig )
+import GHC ( DynFlags, TyCon, Type, SrcSpan, Name, Id, RealSrcLoc, ParsedSource, LHsExpr, HsDecl (..), GhcPs, HsModule (..), getLocA, Located, SrcSpanAnnA, GRHSs (..), GRHS (GRHS), HsExpr (HsVar), LHsDecl, unLoc, Sig (..) )
 import GHC.Plugins
     ( Alt(Alt),
       AnonArgFlag(VisArg),
@@ -46,8 +46,10 @@ import GHC.Types.SrcLoc (srcSpanToRealSrcSpan)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text.Lazy (splitOn)
+import Debug.Trace (trace)
 
 type ExerciseName = String
+type ExercisePath = String 
 
 
 showGhc :: (Outputable a) => DynFlags -> a -> String
@@ -87,6 +89,13 @@ hasTypSig :: String -> ParsedSource -> Bool
 -- | Check if a type signature is explicitely declared for 
 -- the main function of the exercise 
 hasTypSig s ps = s `elem` concatMap (words . showGhcUnsafe) (getSigs ps)
+
+getSig :: String -> ParsedSource -> Sig GhcPs 
+-- | Get type signature matching given function name
+getSig n ps = head $ map (fromJust . get_type_sig) (getSigs ps) 
+    where get_type_sig sig = case sig of
+            ts@(TypeSig _ [name] _) | trace (showGhcUnsafe name ++ ":" ++ n) showGhcUnsafe name == n -> Just ts 
+            _ -> Nothing 
 
 getDecls :: ParsedSource -> [LHsDecl GhcPs]
 getDecls (L l hsm) = hsmodDecls hsm
