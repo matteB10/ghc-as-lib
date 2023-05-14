@@ -1,6 +1,11 @@
 module Temp where
-dropevery :: [a] -> Int -> [a]
-dropevery xs n =  _
+
+test :: [a] -> [a]
+test = test2 
+
+test2 :: [b] -> [b]
+test2 [] = []
+
 {-# RULES "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs #-}
 
 {-# RULES "$/app"   forall a. forall (f :: a -> a) (g :: a -> a) (x :: a).  f $ g x = f (g x) #-}
