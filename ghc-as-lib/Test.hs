@@ -299,33 +299,24 @@ analyse' ti = do
   let exercisename = takeBaseName (exerciseid ti)
   hasTypSig <- checkTypeSig "./studentfiles/Temp.hs" exercisename
   modelFiles <- getFilePaths (msPath ++ (exerciseid ti))
-  mInf <- mapM (compSimplNormalised exercisename) modelFiles
+  mInfs <- mapM (compSimplNormalised exercisename) modelFiles
   typsig <- parseExerciseTypSig (head modelFiles) exercisename
   unless hasTypSig (writeProg (ti {typesig = typsig}))
   stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
-  
-  --let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions
-  --    match = any ((stProg ~=) . core) mProgs -- is similar to any of the model solutions
-  let feedback = mkFeedback stInf mInf
+  let feedback = mkFeedback stInf mInfs
   putStrLn "------------------------------- "
   putStrLn (input ti) >> print feedback
   putStrLn "------------------------------- "
   return feedback
 
 
-analyse :: String -> ExerciseName -> IO Feedback
+analyse :: String -> ExerciseName -> IO (CompInfo, CompInfo, Feedback)
 analyse input exercise = do
   writeInput input
   let exercisename = takeBaseName exercise
-  stInfo <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
+  stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
   modelFiles <- getFilePaths (msPath ++ exercise)
   modInfo <- mapM (compSimplNormalised exercisename) modelFiles
-  let clos = getClosest stInfo modInfo
-  putStrLn $ "Closest match\n" ++ show (core clos )
-  {- let pred = any ((stProg ~>) . core) mProgs  -- is predecessor to any of the model solutions
-      match = any ((stProg ~=) . core) mProgs -- is similar to any of the model solutions
-      modProgFiles = zip (map core mProgs) modelFiles
-      (closest,cfile) = getSmallestP $ map (g stProg) modProgFiles -- get model prog with smallest diff 
-      hasRedPat = closest `hasRedundantPattern` stProg -}
-  --print $ cfile 
-  return $ mkFeedback stInfo modInfo
+  let mInf = getClosest stInf modInfo
+  let feedback = mkFeedback stInf modInfo 
+  return (stInf, mInf, feedback)

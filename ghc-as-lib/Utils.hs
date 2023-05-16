@@ -172,7 +172,7 @@ translateNames studMap modMap = Map.fromList (map go modList)
           go :: (String, String) -> (String, String)
           go (m_src,m_new) = case Map.lookup m_new studMapFlipped of
             Just s_src -> (m_src, s_src)
-            Nothing -> (m_src,m_src) -- use model src name if no student name found 
+            Nothing -> (m_src,m_src) -- use model src name if no corresponding variable in student solution 
 
 keysToVals :: Map String String -> Map String String
 keysToVals mp = Map.fromList (zip vals keys)

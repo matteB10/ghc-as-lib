@@ -31,15 +31,18 @@ getHoleMs (NonRec v e) (NonRec v' e')   = match e e'
 getHoleMs (NonRec v e) (Rec [(v',e')])  = match e e' 
 getHoleMs _ _                           = []
 
+
 match :: CoreExpr -> CoreExpr -> [CoreExpr]
-match e1 e2 | isHolev e1 = [e2]
+match e1 e2 | isHolev e1                  = [e2]
 match (Tick ct e) e'                      = match e e' 
 match e (Tick ct' e')                     | isHolev e = [Tick ct' e']
                                           | otherwise = match e e' 
-match (App e a) (App e' a') = match e e' ++ match a a'                                       
-match (Lam b e) (Lam b' e') = match e e' 
+match (App e a) (App e' a')               = match e e' ++ match a a'                                       
+match (Lam b e) (Lam b' e')               = match e e' 
 match (Case e v t as) (Case e' v' t' as') = match e e' ++ concatMap (uncurry match) (zip (map getAltExp as) (map getAltExp as'))
-match (Let b e) (Let b' e')               = getHoleMs b b' ++ match e e'              
+match e (Case e' v t as)                  = concatMap ((e `match`) . getAltExp) as
+match (Let b e) (Let b' e')               = getHoleMs b b' ++ match e e'
+match e (Let (Rec es) ine)                = concatMap ((e `match`) . snd) es           
 match _ _                                 = []
 
 {- data HoleMatch = HM {exps :: [CoreExpr], tick :: CoreTickish}

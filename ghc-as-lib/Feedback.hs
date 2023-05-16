@@ -6,12 +6,12 @@ import Warning ( Warning(..) )
 import GHC.Driver.Flags (WarnReason(..), WarningFlag (..))
 import GHC.Utils.Outputable (showSDocUnsafe)
 import GHC.Core (CoreProgram)
-import HoleMatches (getHoleMatches, getSrcSpan)
+import HoleMatches (getMatches, getSrcSpan)
 import Compile (CompInfo(..))
 import Similar
 import Print (showParsedFromLoc, showTransParsedFromLoc)
 import Data.Maybe (isJust, catMaybes, fromJust)
-import Data.List ((\\), deleteFirstsBy, find, isPrefixOf)
+import Data.List ((\\), deleteFirstsBy, find, isPrefixOf, intercalate)
 import GHC.Driver.Ppr (showSDoc)
 import Analyse (hasRedundantPattern)
 import Diff ((~~))
@@ -34,13 +34,13 @@ data Feedback = NoWarns
 instance Show Feedback where
   show (Complete f)        = "You've finished the exercise\n" ++ show f
   show NoWarns             = ""
-  show (IncompletePat s)   = "You have an incomplete pattern:\n" ++ s
-  show (OverlappingPat s)  = "You have an overlapping pattern:\n" ++ s
+  show (IncompletePat s)   = "You have an incomplete pattern:\n" ++ s ++ "\n"
+  show (OverlappingPat s)  = "You have an overlapping pattern:\n" ++ s ++ "\n"
   show (RedundantPat s)    = "You might have declared a redundant pattern\n"
   show (Error s)           = "Detected an error:\n" ++ s
-  show (Unknown f)         = "Could not match with model solution\n" ++ show f
-  show (Ontrack f)         = "Solution is on track:\n" ++ show f
-  show (General s)         = s
+  show (Unknown f)         = "Could not match with model solution\n" ++ show f ++ "\n"
+  show (Ontrack f)         = "Solution is on track:\n" ++ show f ++ "\n"
+  show (General s)         = s ++ "\n"
   show (Many fs)           = concatMap show fs
   show (HoleSuggestions s) = "" -- Holefits needs to be checked, future work  
   show (HoleMatches s)     = "Perhaps use " ++ s ++ "\n"
@@ -80,9 +80,10 @@ mkModFeedback sws mws = Many $ map go (mws \\ sws)
 
 
 mkTypSigFeedback :: CompInfo -> CompInfo -> Feedback
+-- | Compare type signatures of the exercise function
 mkTypSigFeedback s m | hasTypSig ex ps 
                      , not $ mainTypeSigMatches ex ps pm = 
-        Error $ "Given type signature " ++
+        Error $ "The given type signature " ++
                  showGhcUnsafe (getSigs ps) ++ 
                  " does not match the specified type of the exercise " ++
                  showGhcUnsafe (getSigs pm)
@@ -99,16 +100,19 @@ isSimilarTo f student models = any ((core student `f`) . core) models
 
 mkHoleFeedback :: CompInfo -> CompInfo -> Feedback
 -- | Make hole match feedback 
-mkHoleFeedback sp mp = Many $ map HoleMatches (filter (/= "") holematch_expr)
-  where holematch_expr = printHoleMatch sp mp 
+mkHoleFeedback sp mp = Many $ map (HoleMatches . mkMsg) holematch_expr
+  where holey_exp      = undefined 
+        holematch_expr = filter ((""/=) . fst) (printHoleMatch sp mp) -- from model solution
+        mkMsg (ex,[])     = ex 
+        mkMsg (ex,locals) = ex ++ " where\n\t" ++ intercalate "\n" locals 
+        
         
 
-printHoleMatch :: CompInfo -> CompInfo -> [String] 
+printHoleMatch :: CompInfo -> CompInfo -> [(String,[String])]
 printHoleMatch s m = strings 
-        where holematches = getHoleMatches (core s) (core m)
-              spans = catMaybes $ filter isJust $ map getSrcSpan holematches
+        where holematches = getMatches (core s) (core m) 
               nameMap = translateNames (names s) (names m)
-              strings = map (showTransParsedFromLoc nameMap (parsed m)) spans
+              strings = map (showTransParsedFromLoc nameMap (parsed m)) (map fst holematches)
 
 hasRedundantPat :: CompInfo -> [CompInfo] -> Bool
 -- | Check if a student attempt contains a redundant pattern 

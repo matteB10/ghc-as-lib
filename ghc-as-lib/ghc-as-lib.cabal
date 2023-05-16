@@ -45,7 +45,9 @@ library
                       ,temporary
                       ,bytestring
                       ,splint 
-                      
+                      ,parsec
+                      ,text-replace 
+
     default-language: Haskell2010
     other-modules:    Similar 
                       ,Instance 
@@ -62,4 +64,5 @@ library
                       ,Instance
                       ,Feedback
                       ,Warning
+                      ,Pragmas 
 
