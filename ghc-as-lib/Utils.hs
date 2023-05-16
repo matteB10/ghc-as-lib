@@ -5,7 +5,7 @@ module Utils where
 
 
 -- GHC imports 
-import GHC ( DynFlags, TyCon, Type, SrcSpan, Name, Id, RealSrcLoc, ParsedSource, LHsExpr, HsDecl (..), GhcPs, HsModule (..), getLocA, Located, SrcSpanAnnA, GRHSs (..), GRHS (GRHS), HsExpr (HsVar), LHsDecl, unLoc, Sig (..) )
+import GHC ( DynFlags, TyCon, Type, SrcSpan, Name, Id, RealSrcLoc, ParsedSource, LHsExpr, HsDecl (..), GhcPs, HsModule (..), getLocA, Located, SrcSpanAnnA, GRHSs (..), GRHS (GRHS), HsExpr (HsVar), LHsDecl, unLoc, Sig (..), getName, HsBindLR (FunBind), HsLocalBinds, LHsLocalBinds, HsValBindsLR (..) )
 import GHC.Plugins
     ( Alt(Alt),
       AnonArgFlag(VisArg),
@@ -40,16 +40,17 @@ import GHC.Core.Predicate (isEvVar)
 import Data.Data ( Data )
 import qualified GHC.Types.Name.Occurrence as Occ
 import GHC.Types.Id.Info (IdDetails(..))
-import GHC (GenLocated(..), RealSrcSpan, ParsedModule, Ghc)
+import GHC (GenLocated(..), RealSrcSpan, ParsedModule, Ghc, HsLocalBindsLR (HsValBinds), LIdP, HsBindLR)
 import GHC.Hs (HsMatchContext(..))
 import GHC.Types.SrcLoc (srcSpanToRealSrcSpan)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text.Lazy (splitOn)
 import Debug.Trace (trace)
+import Data.Char (isSpace)
 
 type ExerciseName = String
-type ExercisePath = String 
+type ExercisePath = String
 
 
 showGhc :: (Outputable a) => DynFlags -> a -> String
@@ -72,30 +73,32 @@ nl x y = x ++ "\n" ++ y
 cm x y = x ++ " , " ++ y
 
 strip :: String -> String
-strip = lstrip . rstrip
+strip = compress . lstrip . rstrip 
 
 lstrip :: String -> String
 lstrip [] = []
-lstrip (x:xs) | x `elem` chars = lstrip xs
+lstrip (x:xs) | isSpace x = lstrip xs
               | otherwise      = x:xs
 
 rstrip :: String -> String
 rstrip = reverse . lstrip . reverse
 
-chars :: String
-chars = " \t\r\n"
+compress (x : y : xs) = if x == y && isSpace x then compress xs else x : compress (y : xs)
+compress x = x
+
 
 hasTypSig :: String -> ParsedSource -> Bool
 -- | Check if a type signature is explicitely declared for 
 -- the main function of the exercise 
 hasTypSig s ps = s `elem` concatMap (words . showGhcUnsafe) (getSigs ps)
 
-getSig :: String -> ParsedSource -> Sig GhcPs 
+getSig :: String -> ParsedSource -> Sig GhcPs
 -- | Get type signature matching given function name
-getSig n ps = head $ map (fromJust . get_type_sig) (getSigs ps) 
+getSig n ps = head $ map (fromJust . get_type_sig) (getSigs ps)
     where get_type_sig sig = case sig of
-            ts@(TypeSig _ [name] _) | trace (showGhcUnsafe name ++ ":" ++ n) showGhcUnsafe name == n -> Just ts 
-            _ -> Nothing 
+            ts@(TypeSig _ [name] _) | trace (showGhcUnsafe name ++ ":" ++ n) showGhcUnsafe name == n -> Just ts
+            _ -> Nothing
+
 
 getDecls :: ParsedSource -> [LHsDecl GhcPs]
 getDecls (L l hsm) = hsmodDecls hsm
@@ -119,18 +122,37 @@ mainTypeSigMatches fun sps mps = nonEmpty studfuns && (head studfuns == head mod
 nonEmpty :: [a] -> Bool
 nonEmpty = not . null
 
-getHsExprFromLoc :: RealSrcSpan -> ParsedSource -> Maybe [LHsExpr GhcPs]
-getHsExprFromLoc rss ps | nonEmpty locExps = return locExps
-                        | otherwise        = Nothing
-    where exps     = universeBi ps :: [LHsExpr GhcPs]
-          locExps  = catMaybes $ filter isJust $ map (matchRealSpan rss) exps
+
+getLocalDeclarations :: RealSrcSpan -> ParsedSource -> [LHsExpr GhcPs] -> [HsBindLR GhcPs GhcPs]
+-- | get local declarations matching a variable
+getLocalDeclarations rss ps@(L l hsm) exps = locDecls
+    where rhsVars  = [lidp | ex@(L l (HsVar _ lidp)) <- universeBi exps :: [LHsExpr GhcPs]]
+          valBinds = [b | b@(ValBinds {}) <- universeBi (hsmodDecls hsm) :: [HsValBindsLR GhcPs GhcPs]]
+          locDecls = [fb | fb@(FunBind ext id' matches _) <- universeBi valBinds :: [HsBindLR GhcPs GhcPs], showGhcUnsafe id' `elem` map showGhcUnsafe rhsVars] -- should be replaced by getName or similar 
+
+getHsVars :: RealSrcSpan -> [LHsExpr GhcPs] -> [LIdP GhcPs]
+-- | Get all variables in the RHS of a given source span and list of expressions
+getHsVars rss exps = vars
+    where rhs = getHsRhs (catMaybes $ filter isJust $ map (matchRealSpan rss) exps) 
+          vars = [lidp | ex@(L l (HsVar _ lidp)) <- universeBi rhs :: [LHsExpr GhcPs]]
 
 
-getHsRhsFromLoc :: RealSrcSpan -> ParsedSource -> Maybe [LHsExpr GhcPs]
-getHsRhsFromLoc rss ps@(L l hsm) | nonEmpty locExDec = return locExDec
+getHsExprFromLoc :: RealSrcSpan -> ParsedSource -> Maybe (LHsExpr GhcPs)
+getHsExprFromLoc rss ps@(L l hsm) | nonEmpty locExps = return (head locExps) -- cannot have several expressions on same loc
+                                  | otherwise        = Nothing
+    where exps      = universeBi ps :: [LHsExpr GhcPs]
+          locExps = catMaybes $ filter isJust $ map (matchRealSpan rss) exps 
+          locDecls  = [c | ex@(ValBinds b c d) <- universeBi (hsmodDecls hsm) :: [HsValBindsLR GhcPs GhcPs]]
+
+
+getHsRhsFromLoc :: RealSrcSpan -> ParsedSource -> Maybe (LHsExpr GhcPs)
+getHsRhsFromLoc rss ps@(L l hsm) | nonEmpty locExDec = return (head locExDec)
                                  | otherwise         = Nothing
     where locDecls = catMaybes $ filter isJust $ map (matchRealSpan rss) (hsmodDecls hsm)
-          locExDec = [c | ex@(L loc (GRHS a b c)) <- universeBi locDecls :: [GenLocated SrcSpan (GRHS GhcPs (LHsExpr GhcPs))]]
+          locExDec = getHsRhs locDecls
+
+getHsRhs :: Data a => a -> [LHsExpr GhcPs]
+getHsRhs decls = [c | ex@(L loc (GRHS a b c)) <- universeBi decls :: [GenLocated SrcSpan (GRHS GhcPs (LHsExpr GhcPs))]]
 
 
 matchRealSpan :: RealSrcSpan -> GenLocated SrcSpanAnnA a -> Maybe (GenLocated SrcSpanAnnA a)
@@ -150,7 +172,7 @@ translateNames studMap modMap = Map.fromList (map go modList)
           go :: (String, String) -> (String, String)
           go (m_src,m_new) = case Map.lookup m_new studMapFlipped of
             Just s_src -> (m_src, s_src)
-            Nothing -> (m_src,"unknown") -- should preferably never happen 
+            Nothing -> (m_src,m_src) -- use model src name if no student name found 
 
 keysToVals :: Map String String -> Map String String
 keysToVals mp = Map.fromList (zip vals keys)
