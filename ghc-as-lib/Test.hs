@@ -23,7 +23,7 @@ import System.Directory (listDirectory, doesDirectoryExist)
 import System.FilePath ((</>), takeDirectory, takeExtension, takeBaseName)
 import Data.List (isSuffixOf, isPrefixOf, sortOn)
 import Data.Char (isDigit)
-import Control.Lens (rewrite)
+import Control.Lens (rewrite, over)
 import Test.QuickCheck (ASCIIString(getASCIIString))
 import Data.List ((\\))
 
@@ -36,10 +36,10 @@ import Control.Monad (when, unless)
 import Diff ((~~))
 import Analyse (hasRedundantPattern)
 import GHC.Driver.Session (programName, WarningFlag (..), WarnReason (..))
-import GHC.Plugins 
-import Warning ( Warning(reason) ) 
+import GHC.Plugins
+import Warning ( Warning(reason) )
 import Feedback
-    ( Feedback, mkFeedback, isMatch, isOnTrack, getClosest ) 
+    ( Feedback (..), mkFeedback, isMatch, isOnTrack, getClosest, isMissingCases, isUnknown, isOverLapping)
 import Options.Applicative.Common (runParser)
 import Language.Haskell.GHC.ExactPrint.Parsers (parseDecl)
 import Data.Map (Map)
@@ -96,12 +96,12 @@ toTuple (CompInfo prog ps ws n e) = return (prog,ps,ws,n,e)
 compare_pr :: (FilePath -> IO CompInfo) -> Bool -> FilePath -> FilePath -> IO Bool
 compare_pr compile b fp1 fp2 = do
   minf <- compile fp1
-  sinf <- compile fp2 
-  let pred = core sinf ~> core minf 
-      match = core sinf ~= core minf 
-      res = pred || match 
+  sinf <- compile fp2
+  let pred = core sinf ~> core minf
+      match = core sinf ~= core minf
+      res = pred || match
   let feedback = mkFeedback sinf [minf]
-  when (not res && b) $ putStrLn $ "failed to match : " ++ show fp1 `nl` show feedback 
+  when (not res && b) $ putStrLn $ "failed to match : " ++ show fp1 `nl` show feedback
   return ((isMatch feedback || isOnTrack feedback) == b) -- feedback matches expected result
 
 
@@ -289,34 +289,39 @@ analyseItems jsonfile = do
   results <- mapM analyse' items
   let match = length $ filter isMatch results
       ontrack = length $ filter isOnTrack results
+      missing = length $ filter isMissingCases results
+      unknown = length $ filter isUnknown results
+      overlapping = length $ filter isOverLapping results
       tot = length items
   putStrLn $ show match ++ "/" ++ show tot ++ " matched."
   putStrLn $ show ontrack ++ "/" ++ show tot ++ " is on track."
+  putStrLn $ show missing ++ "/" ++ show tot ++ " has missing cases."
+  putStrLn $ show overlapping ++ "/" ++ show tot ++ " has overlapping patterns."
+  putStrLn $ show unknown ++ "/" ++ show tot ++ " is unknown."
 
 analyse' :: TestItem -> IO Feedback
-analyse' ti = do
-  writeInput (input ti)
-  let exercisename = takeBaseName (exerciseid ti)
-  hasTypSig <- checkTypeSig "./studentfiles/Temp.hs" exercisename
-  modelFiles <- getFilePaths (msPath ++ (exerciseid ti))
-  mInfs <- mapM (compSimplNormalised exercisename) modelFiles
-  typsig <- parseExerciseTypSig (head modelFiles) exercisename
-  unless hasTypSig (writeProg (ti {typesig = typsig}))
-  stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
-  let feedback = mkFeedback stInf mInfs
-  putStrLn "------------------------------- "
-  putStrLn (input ti) >> print feedback
-  putStrLn "------------------------------- "
-  return feedback
+analyse' ti = if null (input ti) then return (Ontrack NoWarns) else (do
+     writeInput (input ti)
+     let exercisename = takeBaseName (exerciseid ti)
+     hasTypSig <- checkTypeSig "./studentfiles/Temp.hs" exercisename
+     modelFiles <- getFilePaths (msPath ++ (exerciseid ti))
+     mInfs <- mapM (compSimplNormalised exercisename) modelFiles
+     typsig <- parseExerciseTypSig (head modelFiles) exercisename
+     unless hasTypSig (writeProg (ti {typesig = typsig}))
+     stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
+     let feedback = mkFeedback stInf mInfs
+     putStrLn "------------------------------- "
+     putStrLn (input ti) >> print feedback
+     putStrLn "------------------------------- "
+     return feedback)
 
 
-analyse :: String -> ExerciseName -> IO (CompInfo, CompInfo, Feedback)
-analyse input exercise = do
-  writeInput input
+analyse :: String -> ExerciseName -> CompileFun -> IO (CompInfo, CompInfo, Feedback)
+analyse input exercise f = do
   let exercisename = takeBaseName exercise
-  stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
+  stInf <- compString input exercisename f  -- student progrm
   modelFiles <- getFilePaths (msPath ++ exercise)
-  modInfo <- mapM (compSimplNormalised exercisename) modelFiles
+  modInfo <- mapM (f exercisename) modelFiles
   let mInf = getClosest stInf modInfo
-  let feedback = mkFeedback stInf modInfo 
+  let feedback = mkFeedback stInf modInfo
   return (stInf, mInf, feedback)

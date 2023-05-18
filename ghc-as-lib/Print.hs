@@ -35,9 +35,9 @@ showTransParsedFromLoc vars ps rss = (trexps,trlocal)
 showParsedFromLoc :: ParsedSource -> RealSrcSpan -> (String,[String])
 -- | Exact print expression on given location
 showParsedFromLoc ps@(L l hsm) rss = case getHsExprFromLoc rss ps of -- if we find a matching expression, print it
-             Just exp -> (showParsedExpr exp, (map showPsBinds (getLocalDeclarations rss ps [exp])))
+             Just exp -> (showParsedExpr exp, map showPsBinds (getLocalDeclarations rss ps [exp]))
              Nothing   -> case getHsRhsFromLoc rss ps of -- otherwise, we look for the right hand side of the function binding
-                  Just d -> (showParsedExpr d, (map showPsBinds (getLocalDeclarations rss ps [d])))
+                  Just d -> (showParsedExpr d, map showPsBinds (getLocalDeclarations rss ps [d]))
                   Nothing  -> ("",[])
 
 

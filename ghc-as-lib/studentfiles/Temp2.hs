@@ -1,7 +1,11 @@
 module Temp2 where 
 
-elementat :: [a] -> Int -> a
-elementat list i = _ 
+dupli :: [a] -> [a]
+dupli xs = concatMap (replicate 2) xs    
+
+
+{- elementat :: [a] -> Int -> a
+elementat list i = _  -}
 
 -- den sista ontrACK som ej matchas
 --elementat (x:xs) 1 = x

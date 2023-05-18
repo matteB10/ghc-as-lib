@@ -37,17 +37,10 @@ import GHC
       reLocA,
       realSrcSpan,
       la2r,
+      defaultErrorHandler,
       LoadHowMuch (LoadAllTargets), TypecheckedModule (..), TypecheckedSource, GhcTc, HsExpr (HsApp, HsUnboundVar), noLocA, GenLocated (L), LHsExpr, DesugaredModule (dm_core_module), ParsedSource, GhcPs, ParsedModule (pm_parsed_source), MapXRec (mapXRec), SrcSpan (RealSrcSpan), SrcSpanAnnA, SrcSpanAnn' (SrcSpanAnn), Target, SuccessFlag, srcLocFile, ParsedMod (parsedSource), ModSummary)
 import GHC.Paths (libdir)
 import GHC.Driver.Session
-    ( DynFlags(..),
-      GeneralFlag(..),
-      WarningFlag(..),
-      gopt,
-      gopt_unset,
-      wopt_set,
-      wopt_unset,
-      WarnReason(..) ) 
 import GHC.Utils.Outputable 
 import Control.Monad.IO.Class ( MonadIO(liftIO) )
 import GHC.Unit.Module.ModGuts ( ModGuts(mg_binds) ) 
@@ -74,7 +67,7 @@ import Debug.Trace (trace)
 import Control.Monad (unless)
 
 import Transform
-    ( alpha, normalise, preProcess, removeModInfo, removeTyEvidence ) 
+    ( alpha, normalise, preProcess, removeModInfo, removeTyEvidence, alphaWCtxt ) 
 import GHC.Core.Opt.Monad
     ( liftIO,
       CoreToDo(..) ) 
@@ -260,7 +253,7 @@ toDesugar fp =
 
 compSimplNormalised :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile a file to normalised Core with simplifier
-compSimplNormalised name fp = runGhc (Just libdir) $ do 
+compSimplNormalised name fp = defaultErrorHandler defaultFatalMessager defaultFlushOut $ runGhc (Just libdir) $ do 
   (prog,psrc,ref) <- toSimplify fp 
   (prog',names) <- liftIO $ normalise name prog 
   ws <- liftIO (readIORef ref)
@@ -268,7 +261,7 @@ compSimplNormalised name fp = runGhc (Just libdir) $ do
 
 compDesNormalised :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile a file to normalised Core without simplifier
-compDesNormalised name fp = runGhc (Just libdir) $ do 
+compDesNormalised name fp = defaultErrorHandler defaultFatalMessager defaultFlushOut $ runGhc (Just libdir) $ do 
   (prog,psrc,ref) <- toDesugar fp 
   (prog', names) <- liftIO $ normalise name prog
   ws <- liftIO (readIORef ref)
@@ -279,27 +272,30 @@ compSimpl :: ExerciseName -> FilePath -> IO CompInfo
 compSimpl name fp = runGhc (Just libdir) $ do
   (prog,psrc,ref) <- toSimplify fp
   ws <- liftIO $ readIORef ref  
-  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws) Map.empty name 
+  --(p',vars) <- liftIO $ alphaWCtxt name prog 
+  return $ CompInfo prog psrc (nubBy uniqWarns ws) Map.empty name 
 
 compDes :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile to desugared core directly, return renamed program and warnings
 compDes name fp = runGhc (Just libdir) $ do
   (prog,psrc,ref) <- toDesugar fp 
   ws <- liftIO $ readIORef ref
-  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws) Map.empty name 
+  (p',vars) <- liftIO $ alphaWCtxt name prog 
+  return $ CompInfo prog psrc (nubBy uniqWarns ws) Map.empty name 
 
 
 --- For testing purposes 
+type CompileFun = ExerciseName -> FilePath -> IO CompInfo
 
-compString :: String -> ExerciseName -> IO CompInfo
-compString input exercise = do 
+compString :: String -> ExerciseName -> CompileFun -> IO CompInfo
+compString input exercise f = do 
   rules <- readFile "Rules.hs"
   let inputstr = "module Temp where\n" `nl` input `nl` rules
   handle <- openFile "studentfiles/Temp.hs" WriteMode
   hPutStrLn handle inputstr
   hFlush handle
   hClose handle
-  compSimplNormalised exercise "./studentfiles/Temp.hs"
+  f exercise "./studentfiles/Temp.hs"
 
 
 compTestNorm :: (FilePath -> Ghc (CoreProgram, ParsedSource, IORef [Warning]))

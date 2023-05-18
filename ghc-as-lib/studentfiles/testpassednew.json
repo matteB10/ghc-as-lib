@@ -24,18 +24,6 @@
   "exerciseid": "haskell/list/palindrome"
  },
  {
-  "id": 2682,
-  "email": "noakpa@chalmers.se",
-  "solved": true,
-  "solved_model": false,
-  "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
-  "code": "fromBin :: [Int] -> Int\nfromBin bits = sum $ zipWith (\\a b -> a * 2^b) bits (reverse [0 .. length bits - 1])\n",
-  "typesig": "",
-  "input": "fromBin :: [Int] -> Int\nfromBin bits = sum $ zipWith (\\a b -> a * 2^b) bits (reverse [0 .. length bits - 1])\n",
-  "category": "TestPassed",
-  "exerciseid": "haskell/encoding/fromBin"
- },
- {
   "id": 3093,
   "email": "paulso@net.chalmers.se",
   "solved": true,
@@ -145,18 +133,6 @@
  },
  {
   "id": 5082,
-  "email": "paulso@net.chalmers.se",
-  "solved": true,
-  "solved_model": false,
-  "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
-  "code": "\ncompress = map (head) . group\n  where\n    group []           =  []\n    group (x:xs)       =  (x:ys) : group zs\n                           where (ys,zs) = span (== x) xs",
-  "typesig": "",
-  "input": "\ncompress = map (head) . group\n  where\n    group []           =  []\n    group (x:xs)       =  (x:ys) : group zs\n                           where (ys,zs) = span (== x) xs",
-  "category": "TestPassed",
-  "exerciseid": "haskell/list/compress"
- },
- {
-  "id": 5083,
   "email": "paulso@net.chalmers.se",
   "solved": true,
   "solved_model": false,
@@ -432,18 +408,6 @@
   "exerciseid": "haskell/encoding/fromBin"
  },
  {
-  "id": 14297,
-  "email": "gusnorbead@student.gu.se",
-  "solved": true,
-  "solved_model": false,
-  "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
-  "code": "mylength :: [a] -> Int\nmylength [] = 0\nmylength [x] = 1\nmylength (x:xs) = 1 + mylength xs",
-  "typesig": "",
-  "input": "mylength :: [a] -> Int\nmylength [] = 0\nmylength [x] = 1\nmylength (x:xs) = 1 + mylength xs",
-  "category": "TestPassed",
-  "exerciseid": "haskell/list/mylength"
- },
- {
   "id": 15690,
   "email": "maciejg@student.chalmers.se",
   "solved": true,
@@ -456,18 +420,6 @@
   "exerciseid": "haskell/encoding/fromBin"
  },
  {
-  "id": 16309,
-  "email": "gusreipe@student.gu.se",
-  "solved": true,
-  "solved_model": false,
-  "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
-  "code": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [a] = [a]\ncompress (x:xs) | x == head xs = compress xs | otherwise = x : compress xs ",
-  "typesig": "",
-  "input": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [a] = [a]\ncompress (x:xs) | x == head xs = compress xs | otherwise = x : compress xs ",
-  "category": "TestPassed",
-  "exerciseid": "haskell/list/compress"
- },
- {
   "id": 16430,
   "email": "gusreipe@student.gu.se",
   "solved": true,
@@ -476,18 +428,6 @@
   "code": "dupli :: [a] -> [a]\ndupli [] = []\ndupli [a] = [a,a]\ndupli (x:xs) = x:x: dupli xs",
   "typesig": "",
   "input": "dupli :: [a] -> [a]\ndupli [] = []\ndupli [a] = [a,a]\ndupli (x:xs) = x:x: dupli xs",
-  "category": "TestPassed",
-  "exerciseid": "haskell/list/dupli"
- },
- {
-  "id": 16438,
-  "email": "gusreipe@student.gu.se",
-  "solved": true,
-  "solved_model": false,
-  "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
-  "code": "dupli :: [a] -> [a]\ndupli [] = []\ndupli [a] = [a,a]\ndupli (x:xs) = x: x: dupli xs",
-  "typesig": "",
-  "input": "dupli :: [a] -> [a]\ndupli [] = []\ndupli [a] = [a,a]\ndupli (x:xs) = x: x: dupli xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/dupli"
  },

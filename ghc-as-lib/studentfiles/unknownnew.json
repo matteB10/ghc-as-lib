@@ -12,18 +12,6 @@
   "exerciseid": "haskell/list/dupli"
  },
  {
-  "id": 2936,
-  "email": "noakpa@chalmers.se",
-  "solved": false,
-  "solved_model": false,
-  "feedback": "You have drifted from the strategy in such a way that we can not help you any more.",
-  "code": "dupli = foldl (\\x _ -> x ++ x) ?",
-  "typesig": "",
-  "input": "dupli = foldl (\\x _ -> x ++ x)  _",
-  "category": "Unknown",
-  "exerciseid": "haskell/list/dupli"
- },
- {
   "id": 3596,
   "email": "paulso@net.chalmers.se",
   "solved": false,

@@ -156,15 +156,22 @@ isOnTrack = \case
 isMissingCases :: Feedback -> Bool
 isMissingCases = \case
    Many f          -> any isMissingCases f
+   Unknown f       -> isMissingCases f 
    IncompletePat _ -> True
    _               -> False
 
 isOverLapping :: Feedback -> Bool
 isOverLapping =  \case
   Many f           -> any isOverLapping f
+  Unknown f        -> isOverLapping f 
   OverlappingPat _ -> True
   _                -> False
 
+isUnknown :: Feedback -> Bool
+isUnknown =  \case
+  Many f      -> any isUnknown f
+  Unknown _   -> True
+  _           -> False
 
 (>+>) :: Feedback -> Feedback -> Feedback
 Many fs >+> Many gs = Many (fs ++ gs)

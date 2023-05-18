@@ -144,54 +144,6 @@
   "exerciseid": "haskell/list/compress"
  },
  {
-  "id": 7279,
-  "email": "gusporssi@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "\n\ncompress :: Eq a => [a] -> [a]\ncompress []  = []\ncompress [x] = [x]\ncompress (x:y:xs)\n    | x == y    = compress (y:xs)\n    | otherwise = x : compress (y:xs)",
-  "typesig": "",
-  "input": "\n\ncompress :: Eq a => [a] -> [a]\ncompress []  = []\ncompress [x] = [x]\ncompress (x:y:xs)\n    | x == y    = compress (y:xs)\n    | otherwise = x : compress (y:xs)",
-  "category": "Complete",
-  "exerciseid": "haskell/list/compress"
- },
- {
-  "id": 7363,
-  "email": "gusporssi@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "\n\ndupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "typesig": "",
-  "input": "\n\ndupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "category": "Complete",
-  "exerciseid": "haskell/list/dupli"
- },
- {
-  "id": 24893,
-  "email": "a@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "typesig": "",
-  "input": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "category": "Complete",
-  "exerciseid": "haskell/list/dupli"
- },
- {
-  "id": 7758,
-  "email": "gusporssi@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "\n\nmyreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "typesig": "",
-  "input": "\n\nmyreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "category": "Complete",
-  "exerciseid": "haskell/list/myreverse"
- },
- {
   "id": 9712,
   "email": "melvinla@chalmers.se",
   "solved": true,
@@ -216,18 +168,6 @@
   "exerciseid": "haskell/list/repli"
  },
  {
-  "id": 9773,
-  "email": "melvinla@chalmers.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "typesig": "",
-  "input": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "category": "Complete",
-  "exerciseid": "haskell/list/dupli"
- },
- {
   "id": 9060,
   "email": "gusgabrbe@student.gu.se",
   "solved": true,
@@ -238,78 +178,6 @@
   "input": "repli :: [a] -> Int -> [a]\nrepli xs i = concatMap(replicate i) xs",
   "category": "Complete",
   "exerciseid": "haskell/list/repli"
- },
- {
-  "id": 25445,
-  "email": "a@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "mylength :: [a] -> Int\nmylength []     = 0\nmylength (x:xs) = 1 + mylength xs ",
-  "typesig": "",
-  "input": "mylength :: [a] -> Int\nmylength []     = 0\nmylength (x:xs) = 1 + mylength xs ",
-  "category": "Complete",
-  "exerciseid": "haskell/list/mylength"
- },
- {
-  "id": 10888,
-  "email": "gusalchmo@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "typesig": "",
-  "input": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "category": "Complete",
-  "exerciseid": "haskell/list/dupli"
- },
- {
-  "id": 10905,
-  "email": "gusalchmo@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "typesig": "",
-  "input": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "category": "Complete",
-  "exerciseid": "haskell/list/myreverse"
- },
- {
-  "id": 10920,
-  "email": "gusalchmo@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "repli :: [a] -> Int -> [a]\nrepli [] _ = []\nrepli (x:xs) n = replicate n x ++ repli xs n",
-  "typesig": "",
-  "input": "repli :: [a] -> Int -> [a]\nrepli [] _ = []\nrepli (x:xs) n = replicate n x ++ repli xs n",
-  "category": "Complete",
-  "exerciseid": "haskell/list/repli"
- },
- {
-  "id": 10930,
-  "email": "gusalchmo@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs)\n    | x == y    = compress (y:xs)\n    | otherwise = x : compress (y:xs)",
-  "typesig": "",
-  "input": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs)\n    | x == y    = compress (y:xs)\n    | otherwise = x : compress (y:xs)",
-  "category": "Complete",
-  "exerciseid": "haskell/list/compress"
- },
- {
-  "id": 10936,
-  "email": "gusalchmo@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs)\n    | x == y    = compress (y:xs)\n    | otherwise = x : compress (y:xs)",
-  "typesig": "",
-  "input": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs)\n    | x == y    = compress (y:xs)\n    | otherwise = x : compress (y:xs)",
-  "category": "Complete",
-  "exerciseid": "haskell/list/compress"
  },
  {
   "id": 11119,
@@ -324,30 +192,6 @@
   "exerciseid": "haskell/list/myreverse"
  },
  {
-  "id": 13791,
-  "email": "rezvan@chalmers.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "typesig": "",
-  "input": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "category": "Complete",
-  "exerciseid": "haskell/list/myreverse"
- },
- {
-  "id": 15806,
-  "email": "maciejg@student.chalmers.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "mylength :: [a] -> Int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength xs",
-  "typesig": "",
-  "input": "mylength :: [a] -> Int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength xs",
-  "category": "Complete",
-  "exerciseid": "haskell/list/mylength"
- },
- {
   "id": 15910,
   "email": "maciejg@student.chalmers.se",
   "solved": true,
@@ -360,18 +204,6 @@
   "exerciseid": "haskell/list/myreverse"
  },
  {
-  "id": 17883,
-  "email": "gusmuusta@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "mylength :: [a] -> Int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength xs",
-  "typesig": "",
-  "input": "mylength :: [a] -> Int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength xs",
-  "category": "Complete",
-  "exerciseid": "haskell/list/mylength"
- },
- {
   "id": 18817,
   "email": "gusvuongma@student.gu.se",
   "solved": true,
@@ -380,30 +212,6 @@
   "code": "mylength :: [a] -> int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength(xs)\n",
   "typesig": "",
   "input": "mylength :: [a] -> int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength(xs)\n",
-  "category": "Complete",
-  "exerciseid": "haskell/list/mylength"
- },
- {
-  "id": 19161,
-  "email": "leesment@chalmers.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "typesig": "",
-  "input": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "category": "Complete",
-  "exerciseid": "haskell/list/myreverse"
- },
- {
-  "id": 20743,
-  "email": "leesment@chalmers.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "mylength :: [a] -> Int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength xs",
-  "typesig": "",
-  "input": "mylength :: [a] -> Int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength xs",
   "category": "Complete",
   "exerciseid": "haskell/list/mylength"
  },
@@ -420,18 +228,6 @@
   "exerciseid": "haskell/list/dupli"
  },
  {
-  "id": 20291,
-  "email": "galldin@chalmers.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "typesig": "",
-  "input": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "category": "Complete",
-  "exerciseid": "haskell/list/myreverse"
- },
- {
   "id": 21552,
   "email": "gusgabrbe@student.gu.se",
   "solved": true,
@@ -442,18 +238,6 @@
   "input": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs) | x == y = compress (x:xs)\n                  | otherwise = x : compress (y:xs)",
   "category": "Complete",
   "exerciseid": "haskell/list/compress"
- },
- {
-  "id": 21627,
-  "email": "gusgabrbe@student.gu.se",
-  "solved": true,
-  "solved_model": true,
-  "feedback": "Correct.",
-  "code": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "typesig": "",
-  "input": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "category": "Complete",
-  "exerciseid": "haskell/list/dupli"
  },
  {
   "id": 22725,

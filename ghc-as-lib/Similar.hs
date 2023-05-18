@@ -27,16 +27,15 @@ import GHC.Core.Utils (exprType)
 class Similar a where
     (~=) :: a -> a -> Bool
     (~>)  :: a -> a -> Bool
-    -- (~?) :: a -> a -> Maybe HoleMap
 
 instance Similar CoreProgram where
     (x:xs) ~> (y:ys) = x ~> y && xs ~> ys
     [] ~> []         = True
-    _ ~> _           = trace "different number of binders" False
+    _ ~> _           = False -- trace "different number of binders" False
 
     (x:xs) ~= (y:ys) = x ~= y && xs ~= ys
     [] ~= []         = True
-    _ ~= _           = trace "different number of binders" False
+    _ ~= _           = False -- trace "different number of binders" False
 
 
 --- Without trace -------------------------------------

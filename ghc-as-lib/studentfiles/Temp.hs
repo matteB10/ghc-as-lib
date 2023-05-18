@@ -1,10 +1,9 @@
 module Temp where
 
-test :: [a] -> [a]
-test = test2 
-
-test2 :: [b] -> [b]
-test2 [] = []
+repli :: [a] -> Int -> [a]
+repli [] _ = []
+repli (x:xs) 0 = repli xs  _
+repli (x:xs) n = x:(repli (x:xs) (n-1))
 
 {-# RULES "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs #-}
 
