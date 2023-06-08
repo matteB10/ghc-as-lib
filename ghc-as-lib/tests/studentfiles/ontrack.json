@@ -1,0 +1,1022 @@
+[
+    {
+        "exerciseid": "haskell/list/dupli",
+        "input": "dupli = concatMap  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "dupli =\n    concatMap ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "dupli :: [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/dupli",
+        "input": "dupli = concatMap (replicate  _)",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "dupli =\n    concatMap (replicate ?)",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "dupli :: [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/compress",
+        "input": "compress = _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "compress :: Eq a => [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/rotate",
+        "input": "rotate =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "rotate :: [a] -> Int -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/dupli",
+        "input": "dupli = _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "dupli :: [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/encoding/fromBin",
+        "input": "fromBin = _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "fromBin :: [Int] -> Int"
+    },
+    {
+        "exerciseid": "haskell/tuple/allpairs",
+        "input": "allpairs = _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "allpairs :: [a] -> [(a,a)]"
+    },
+    {
+        "exerciseid": "haskell/list/split",
+        "input": "split = _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "split :: [a] -> Int -> ([a], [a])"
+    },
+    {
+        "exerciseid": "haskell/list/encode",
+        "input": "encode = _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "encode :: Eq a => [a] -> [(Int, a)]"
+    },
+    {
+        "exerciseid": "haskell/list/split",
+        "input": "split = flip  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "split =\n    flip ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "split :: [a] -> Int -> ([a], [a])"
+    },
+    {
+        "exerciseid": "haskell/list/mylast",
+        "input": "mylast =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "mylast =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "mylast :: [a] -> a"
+    },
+    {
+        "exerciseid": "haskell/list/mylast",
+        "input": "mylast = foldr1  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "mylast =\n    foldr1 ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "mylast :: [a] -> a"
+    },
+    {
+        "exerciseid": "haskell/list/mylast",
+        "input": "mylast = foldr1 (const  _)",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "mylast =\n    foldr1 (const ?)",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "mylast :: [a] -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat lijst n =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat lijst n =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/pack",
+        "input": "pack = _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "pack :: Eq a => [a] -> [[a]]"
+    },
+    {
+        "exerciseid": "haskell/list/mylength",
+        "input": "mylength = \n    _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "mylength =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "mylength :: [a] -> Int"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat = _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat (x:xs) 1 = x",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat (x : xs) 1 =\n    x",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat x n =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat x n =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/mylength",
+        "input": "mylength = \n   foldr  _  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "mylength =\n    foldr ? ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "mylength :: [a] -> Int"
+    },
+    {
+        "exerciseid": "haskell/list/mylength",
+        "input": "mylength = \n   foldr ( _ .  _)  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "mylength =\n    foldr (? . ?) ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "mylength :: [a] -> Int"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat x n =  _ !!  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat x n =\n    ? !! ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/mylength",
+        "input": "mylength = \n   foldr ((+) .  _)  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "mylength =\n    foldr ((+) . ?) ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "mylength :: [a] -> Int"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat x n = x !!  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat x n =\n    x !! ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat x n = x !! ( _ -  _)",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat x n =\n    x !! (? - ?)",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat x n = x !! (n -  _)",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat x n =\n    x !! (n - ?)",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat  _  _ =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat ? ? =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat  _ i =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat ? i =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/pack",
+        "input": "pack  _ =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "pack ? =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "pack :: Eq a => [a] -> [[a]]"
+    },
+    {
+        "exerciseid": "haskell/list/pack",
+        "input": "pack [] = []\npack (x:xs) =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "pack [] =\n    []\npack (x : xs) =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "pack :: Eq a => [a] -> [[a]]"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat ( _ :  _) i =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat (? : ?) i =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat ( _ : i) k =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat (? : i) k =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat ( _ : i) k = \n   elementat  _  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat (? : i) k =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/mylength",
+        "input": "mylength = \n   foldr ((+) . (const _))  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "mylength =\n    foldr ((+) . (const ?)) ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "mylength :: [a] -> Int"
+    },
+    {
+        "exerciseid": "haskell/list/mylength",
+        "input": "mylength = \n   foldr ((+) . (const _)) 0",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "mylength =\n    foldr ((+) . (const ?)) 0",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "mylength :: [a] -> Int"
+    },
+    {
+        "exerciseid": "haskell/list/palindrome",
+        "input": "palindrome [] = True",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "palindrome [] =\n    True",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "palindrome :: Eq a => [a] -> Bool"
+    },
+    {
+        "exerciseid": "haskell/list/palindrome",
+        "input": "palindrome = _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "palindrome :: Eq a => [a] -> Bool"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat xs i = \n    _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat xs i =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/palindrome",
+        "input": "palindrome  _ =\n     _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "palindrome ? =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "palindrome :: Eq a => [a] -> Bool"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat xs i = \n    _ !!  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat xs i =\n    ? !! ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat xs i = \n   xs !!  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat xs i =\n    xs !! ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat xs i = \n   xs !! ( _ -  _)",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat xs i =\n    xs !! (? - ?)",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat xs i = \n   xs !! (i -  _)",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat xs i =\n    xs !! (i - ?)",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/myreverse",
+        "input": "myreverse =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "myreverse =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "myreverse :: [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat list  _ =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat list ? =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat list i =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat list i =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat list i =  _ !!  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat list i =\n    ? !! ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/compress",
+        "input": "compress [] = []",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "compress [] =\n    []",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "compress :: Eq a => [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat list i = list !!  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat list i =\n    list !! ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/palindrome",
+        "input": "palindrome xs = \n    _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "palindrome xs =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "palindrome :: Eq a => [a] -> Bool"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat list i = list !! ( _ -  _)",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat list i =\n    list !! (? - ?)",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/elementat",
+        "input": "elementat list i = list !! (i -  _)",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "elementat list i =\n    list !! (i - ?)",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "elementat :: [a] -> Int -> a"
+    },
+    {
+        "exerciseid": "haskell/list/pack",
+        "input": "pack x =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "pack :: Eq a => [a] -> [[a]]"
+    },
+    {
+        "exerciseid": "haskell/list/myreverse",
+        "input": "myreverse = \n   (foldl  _  _)",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "myreverse =\n    (foldl ? ?)",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "myreverse :: [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/myreverse",
+        "input": "myreverse = \n   (foldl ( _) [])",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "myreverse =\n    (foldl (?) [])",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "myreverse :: [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/myreverse",
+        "input": "myreverse = \n   (foldl (flip  _) [])",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "myreverse =\n    (foldl (flip ?) [])",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "myreverse :: [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/pack",
+        "input": "pack [] =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "pack [] =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "pack :: Eq a => [a] -> [[a]]"
+    },
+    {
+        "exerciseid": "haskell/list/pack",
+        "input": "pack [] = []",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "pack [] =\n    []",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "pack :: Eq a => [a] -> [[a]]"
+    },
+    {
+        "exerciseid": "haskell/list/pack",
+        "input": "pack [] = []\npack  _ =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "pack [] =\n    []\npack ? =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "pack :: Eq a => [a] -> [[a]]"
+    },
+    {
+        "exerciseid": "haskell/list/myconcat",
+        "input": "myconcat = \n    _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "myconcat =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "myconcat :: [[a]] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/palindrome",
+        "input": "palindrome xs = \n    _ &&  _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "palindrome xs =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "palindrome :: Eq a => [a] -> Bool"
+    },
+    {
+        "exerciseid": "haskell/list/mylength",
+        "input": "mylength = foldr ( _)  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "mylength =\n    foldr (?) ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "mylength :: [a] -> Int"
+    },
+    {
+        "exerciseid": "haskell/list/myreverse",
+        "input": "myreverse = \n    _\n      where _ = _",
+        "output": {
+            "result": [
+                true,
+                "You have submitted a similar term. Maybe you inserted or removed parentheses?",
+                "myreverse =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "myreverse :: [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/compress",
+        "input": "compress = \n   foldr  _ []\n      where _ = _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "compress =\n    foldr ? []",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "compress :: Eq a => [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/compress",
+        "input": "compress = \n   foldr  _ []\n   where \n      skipDups  _  _ = \n          _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "compress =\n    foldr ? []",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "compress :: Eq a => [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/compress",
+        "input": "compress xs = foldr ( _) [] xs",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "compress xs =\n    foldr (?) [] xs",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "compress :: Eq a => [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/compress",
+        "input": "compress = foldr ( _) []",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "compress =\n    foldr (?) []",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "compress :: Eq a => [a] -> [a]"
+    },
+    {
+        "exerciseid": "haskell/list/dropevery",
+        "input": "dropevery xs n =  _",
+        "output": {
+            "result": [
+                true,
+                "Correct.",
+                "dropevery xs n =\n    ?",
+                false
+            ],
+            "error": null
+        },
+        "category": "OnTrack",
+        "typesig": "dropevery :: [a] -> Int -> [a]"
+    }
+]

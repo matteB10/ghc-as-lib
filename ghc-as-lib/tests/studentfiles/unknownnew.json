@@ -1,0 +1,86 @@
+[
+ {
+  "id": 2930,
+  "email": "noakpa@chalmers.se",
+  "solved": false,
+  "solved_model": false,
+  "feedback": "You have drifted from the strategy in such a way that we can not help you any more.",
+  "code": "dupli = foldl (\\x _ -> x ++ x) ?",
+  "typesig": "dupli :: [a] -> [a]",
+  "input": "dupli = foldl (\\x _ -> x ++ x)  _",
+  "category": "Unknown",
+  "exerciseid": "haskell/list/dupli"
+ },
+ {
+  "id": 3596,
+  "email": "paulso@net.chalmers.se",
+  "solved": false,
+  "solved_model": false,
+  "feedback": "You have drifted from the strategy in such a way that we can not help you any more.",
+  "code": "fromBin = \n  foldl op 0\n  where\n    op ? ? =\n      ?",
+  "typesig": "fromBin :: [Int] -> Int",
+  "input": "fromBin = \n  foldl op 0\n  where\n    op  _  _ =\n       _",
+  "category": "Unknown",
+  "exerciseid": "haskell/encoding/fromBin"
+ },
+ {
+  "id": 3628,
+  "email": "paulso@net.chalmers.se",
+  "solved": false,
+  "solved_model": false,
+  "feedback": "You have drifted from the strategy in such a way that we can not help you any more.",
+  "code": "fromBin = \n  foldl op 0\n  where\n    op = ?",
+  "typesig": "fromBin :: [Int] -> Int",
+  "input": "fromBin = \n  foldl op 0\n  where\n    op =  _",
+  "category": "Unknown",
+  "exerciseid": "haskell/encoding/fromBin"
+ },
+ {
+  "id": 11821,
+  "email": "sevelin@student.chalmers.se",
+  "solved": false,
+  "solved_model": false,
+  "feedback": "You have drifted from the strategy in such a way that we can not help you any more.",
+  "code": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) (reverse xs) ?\n",
+  "typesig": "fromBin :: [Int] -> Int",
+  "input": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) (reverse xs)  _\n",
+  "category": "Unknown",
+  "exerciseid": "haskell/encoding/fromBin"
+ },
+ {
+  "id": 25881,
+  "email": "johan@gu.se",
+  "solved": false,
+  "solved_model": false,
+  "feedback": "You have drifted from the strategy in such a way that we can not help you any more.",
+  "code": "fromBin [] = 0\nfromBin (x:xs) = ?",
+  "typesig": "fromBin :: [Int] -> Int",
+  "input": "fromBin [] = 0\nfromBin (x:xs) =  _",
+  "category": "Unknown",
+  "exerciseid": "haskell/encoding/fromBin"
+ },
+ {
+  "id": 25913,
+  "email": "johan@gu.se",
+  "solved": false,
+  "solved_model": false,
+  "feedback": "You have drifted from the strategy in such a way that we can not help you any more.",
+  "code": "fromBin = foldr ? ? ",
+  "typesig": "fromBin :: [Int] -> Int",
+  "input": "fromBin = foldr  _  _ ",
+  "category": "Unknown",
+  "exerciseid": "haskell/encoding/fromBin"
+ },
+ {
+  "id": 20460,
+  "email": "leesment@chalmers.se",
+  "solved": false,
+  "solved_model": false,
+  "feedback": "You have drifted from the strategy in such a way that we can not help you any more.",
+  "code": "repli :: [a] -> Int -> [a]\nrepli [] _ = []\nrepli (x:xs) 0 = repli xs ?\nrepli (x:xs) n = x:(repli (x:xs) (n-1))\n",
+  "typesig": "repli :: [a] -> Int -> [a]",
+  "input": "repli :: [a] -> Int -> [a]\nrepli [] _ = []\nrepli (x:xs) 0 = repli xs  _\nrepli (x:xs) n = x:(repli (x:xs) (n-1))\n",
+  "category": "Unknown",
+  "exerciseid": "haskell/list/repli"
+ }
+]
