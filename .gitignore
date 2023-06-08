@@ -25,3 +25,4 @@ cabal.project.local~
 #/ghc-as-lib/modelsolutions/*
 #/ghc-as-lib/studentfiles/*
 *.py
+*.html 

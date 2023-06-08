@@ -39,7 +39,7 @@ import GHC.Driver.Session (programName, WarningFlag (..), WarnReason (..))
 import GHC.Plugins
 import Warning ( Warning(reason) )
 import Feedback
-    ( Feedback (..), mkFeedback, isMatch, isOnTrack, getClosest, isMissingCases, isUnknown, isOverLapping)
+    ( Feedback (..), mkFeedback, isMatch, isOnTrack, getClosest, isMissingCases, isHoleMatch, isUnknown, isHLint, isOverLapping)
 import Options.Applicative.Common (runParser)
 import Language.Haskell.GHC.ExactPrint.Parsers (parseDecl)
 import Data.Map (Map)
@@ -174,10 +174,11 @@ instance FromJSON TestItem
 
 decodeJson :: FilePath -> IO [TestItem]
 decodeJson fp = do
-  inputJson <- B.readFile fp
+  handle <- openBinaryFile fp ReadMode 
+  inputJson <- B.hGetContents handle 
   let inputData = decode inputJson :: Maybe [TestItem]
   case inputData of
-    Just d -> return (take 100 d) -- more than 100 will eat all the memory
+    Just d -> return d 
     Nothing -> error $ "Could not read " ++ fp
 
 msPath = "./modelsolutions/"
@@ -206,8 +207,10 @@ testItem :: (ExerciseName -> FilePath -> IO CompInfo) -> TestItem -> IO (Bool,Bo
 --   (False,False) : Unknown in Ask-Elle, Failure in ghc 
 --   (False, True) : Unknown in Ask-Elle, success in ghc 
 testItem f ti = do
-    writeProg ti
+    writeInput (input ti)
     let exercisename = takeBaseName (exerciseid ti)
+    hasTypSig <- checkTypeSig "/home/sauron/ae_test/ghc-as-lib/ghc-as-lib/ghc-as-lib/studentfiles/Temp.hs" exercisename
+    unless hasTypSig (writeProg ti)
     (stProg,psrc,ws,_,_) <- toTuple =<< f exercisename "./studentfiles/Temp.hs"  -- student progrm
     modelFiles <- getFilePaths (msPath ++ exerciseid ti)
     mProgs <- mapM (f exercisename) modelFiles
@@ -217,7 +220,7 @@ testItem f ti = do
     --print res 
     --printRedundantPat ti stProg (zip mProgs modelFiles)
     case category ti of
-        "Complete"   -> return (True, res,input ti)  -- program completed
+        "Complete"   -> return (True, match,input ti)  -- program completed
         "OnTrack"    -> return (True, res,input ti)  -- recognised as on track
         "Missing"    -> return (False,res,input ti)  -- missing cases (not defined on all input)
         "TestPassed" -> return (False,res,input ti)  -- quickcheck tests passed, but could not be matched 
@@ -263,52 +266,63 @@ tempHeader = "module Temp where\n"
 
 writeProg :: TestItem -> IO ()
 writeProg ti = do
-    rules <- readFile "Rules.hs"
-
+    rules <- readFile "/home/sauron/ae_test/ghc-as-lib/ghc-as-lib/ghc-as-lib/Rules.hs"
     let inputstr = tempHeader ++ typesig ti `nl` input ti `nl` rules
     -- Write the inputstr to the temporary file
-    handle <- openFile "studentfiles/Temp.hs" WriteMode
+    handle <- openFile "/home/sauron/ae_test/ghc-as-lib/ghc-as-lib/ghc-as-lib/studentfiles/Temp.hs" WriteMode
     hPutStrLn handle inputstr
     hFlush handle
     hClose handle
 
 writeInput :: String -> IO ()
 writeInput input = do
-    rules <- readFile "Rules.hs"
+    rules <- readFile "/home/sauron/ae_test/ghc-as-lib/ghc-as-lib/ghc-as-lib/Rules.hs"
     -- must insert type signature in a better way later, if not defined by student 
     let inputstr = tempHeader `nl` input `nl` rules
     -- Write the inputstr to the temporary file
-    handle <- openFile "studentfiles/Temp.hs" WriteMode
+    handle <- openFile "/home/sauron/ae_test/ghc-as-lib/ghc-as-lib/ghc-as-lib/studentfiles/Temp.hs" WriteMode
     hPutStrLn handle inputstr
     hFlush handle
     hClose handle
 
-analyseItems :: FilePath -> IO ()
-analyseItems jsonfile = do
-  items <- decodeJson jsonfile
+
+diagnose :: FilePath -> IO () 
+diagnose fp = decodeJson fp >>= analyseItems
+
+
+analyseItems :: [TestItem] -> IO ()
+analyseItems items = do
   results <- mapM analyse' items
   let match = length $ filter isMatch results
       ontrack = length $ filter isOnTrack results
       missing = length $ filter isMissingCases results
       unknown = length $ filter isUnknown results
       overlapping = length $ filter isOverLapping results
+      holesugg = length $ filter isHoleMatch results 
+      hlint = length $ filter isHLint results
       tot = length items
   putStrLn $ show match ++ "/" ++ show tot ++ " matched."
   putStrLn $ show ontrack ++ "/" ++ show tot ++ " is on track."
   putStrLn $ show missing ++ "/" ++ show tot ++ " has missing cases."
   putStrLn $ show overlapping ++ "/" ++ show tot ++ " has overlapping patterns."
   putStrLn $ show unknown ++ "/" ++ show tot ++ " is unknown."
+  putStrLn $ show holesugg ++ "/" ++ show tot ++ "got hole suggestions"
+  putStrLn $ show hlint ++ "/" ++ show tot ++ "got Hlint suggestions"
+  
+
+relPath = "/home/sauron/ae_test/ghc-as-lib/ghc-as-lib/ghc-as-lib/modelsolutions/"
 
 analyse' :: TestItem -> IO Feedback
-analyse' ti = if null (input ti) then return (Ontrack NoWarns) else (do
+analyse' ti = if null (input ti) then return (Ontrack []) else (do
      writeInput (input ti)
      let exercisename = takeBaseName (exerciseid ti)
-     hasTypSig <- checkTypeSig "./studentfiles/Temp.hs" exercisename
-     modelFiles <- getFilePaths (msPath ++ (exerciseid ti))
+     hasTypSig <- checkTypeSig "/home/sauron/ae_test/ghc-as-lib/ghc-as-lib/ghc-as-lib/studentfiles/Temp.hs" exercisename
+     modelFiles <- getFilePaths (relPath ++ exerciseid ti)
      mInfs <- mapM (compSimplNormalised exercisename) modelFiles
+     when (null modelFiles) $ error ("could not read modelfiles from" ++ exerciseid ti)
      typsig <- parseExerciseTypSig (head modelFiles) exercisename
      unless hasTypSig (writeProg (ti {typesig = typsig}))
-     stInf <- compSimplNormalised exercisename "./studentfiles/Temp.hs"  -- student progrm
+     stInf <- compSimplNormalised exercisename "/home/sauron/ae_test/ghc-as-lib/ghc-as-lib/ghc-as-lib/studentfiles/Temp.hs"  -- student progrm
      let feedback = mkFeedback stInf mInfs
      putStrLn "------------------------------- "
      putStrLn (input ti) >> print feedback
@@ -323,5 +337,29 @@ analyse input exercise f = do
   modelFiles <- getFilePaths (msPath ++ exercise)
   modInfo <- mapM (f exercisename) modelFiles
   let mInf = getClosest stInf modInfo
+  liftIO $ print $ core mInf 
   let feedback = mkFeedback stInf modInfo
   return (stInf, mInf, feedback)
+
+analyse_ :: FilePath -> ExerciseName -> IO (CompInfo, CompInfo, Feedback)
+analyse_ fp exercise = do
+  let exercisename = takeBaseName exercise
+  stInf <- compSimplNormalised exercisename fp 
+  modelFiles <- getFilePaths (msPath ++ exercise)
+  modInfo <- mapM (compSimplNormalised exercisename) modelFiles
+  let mInf = getClosest stInf modInfo
+  let feedback = mkFeedback stInf modInfo
+  return (stInf, mInf, feedback)
+
+
+getBinder :: CoreProgram -> String -> [CoreBind]
+getBinder p s = let recs = filter isRect p 
+                    nonr = filter isNonRect p 
+                    rs = filter (\x -> getOccString (getBindTopVar x) == s) recs 
+                    ns = filter (\x -> getOccString (getBindTopVar x) == s) nonr 
+                in rs ++ ns 
+
+
+isNonRect b = case b of {(Rec es) -> True; _ -> False}
+
+isRect = not . isNonRect  

@@ -7,7 +7,7 @@
 module Instance where
 -- | Module containing Show instances for GHC types
 
-import GHC 
+import GHC
 import GHC.Core.DataCon (DataCon(..), mkDataCon, dataConName)
 import GHC.Types.Var (Var(..), TyCoVarBinder(..), VarBndr(..), ArgFlag(..), AnonArgFlag, TyCoVar, Specificity(..))
 import GHC.Types.Literal (Literal(..), LitNumType, pprLiteral)
@@ -90,9 +90,6 @@ instance Show CtLoc where
 instance Show a => Show (UniqSet a) where
   show x = showSDocUnsafe (pprUniqSet undefined x)
 
-{- instance Show Cts where
-  show c = ""  -}
-
 
 instance Show Var where
   --show x = showSDocUnsafe $ ppr (varName x)  -- show uniques aswell
@@ -118,12 +115,12 @@ instance Show TyCon where
 
 
 instance Show CoercionR where
-  show = showSDocUnsafe . ppr  
+  show = showSDocUnsafe . ppr
 
 deriving instance Show Type
 
 instance Show AnonArgFlag where
-  show = showSDocUnsafe . ppr 
+  show = showSDocUnsafe . ppr
 
 deriving instance (Show a, Show b) => Show (VarBndr a b)
 deriving instance Show ArgFlag
@@ -143,7 +140,7 @@ p :: [Char] -> [Char]
 p x = "(" ++ x ++ ")"
 
 instance Show CoreTickish where
-  show = showSDocUnsafe . ppr  
+  show = showSDocUnsafe . ppr
 
 instance Show FunctionOrData where
   show IsFunction = "(function)"
@@ -172,10 +169,10 @@ instance Show Warnings where
 deriving instance Show TyThing
 
 instance Show (CoAxiom a) where
-  show = showSDocUnsafe . ppr  
+  show = showSDocUnsafe . ppr
 
 instance Show ConLike where
-  show = showSDocUnsafe . ppr 
+  show = showSDocUnsafe . ppr
 
 instance Show DynFlags where
   show (DynFlags {generalFlags = g}) = show g
@@ -250,16 +247,16 @@ instance Show (HsDecl GhcPs) where
   show (DerivD d1 d2) = "DerivD " ++ showO d1 `sp` showO d2   -- ^ Deriving declaration
   show (ValD v1 v2) = "valD " ++ show v1 `sp` show v2    -- ^ Value declaration
   show (SigD s1 s2) = "SigD " ++ showO s1 `sp` showO s2    -- ^ Signature declaration
-  show a = showSDocUnsafe $ ppr a 
+  show a = showSDocUnsafe $ ppr a
 
 --deriving instance Show (HsBind GhcPs)
 --deriving instance Show (MatchGroup GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
 --deriving instance Show (GRHSs GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
 
-instance Show (HsRecFields GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs))) where show = showO 
-instance Show (HsOverLit GhcPs) where show = showO 
+instance Show (HsRecFields GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs))) where show = showO
+instance Show (HsOverLit GhcPs) where show = showO
 instance Show (HsPatSigType (GhcPass 'Parsed)) where show = showO
-instance Show EpAnnSumPat where show a = "" 
+instance Show EpAnnSumPat where show a = ""
 instance Show (HsConDetails Void (GenLocated SrcSpanAnnN RdrName) [RecordPatSynField GhcPs]) where show a = ""
 instance Show (HsPatSynDir GhcPs) where show a = ""
 instance Show (HsRecField' (AmbiguousFieldOcc GhcPs) (GenLocated SrcSpanAnnA (HsExpr GhcPs))) where show a = ""
@@ -305,14 +302,14 @@ deriving instance Show (HsIPBinds GhcPs)
 deriving instance Show (IPBind GhcPs)
 instance Show (ABExport GhcPs) where show a = ""
 
-sp s1 s2 = s1 ++ " " ++ s2 
+sp s1 s2 = s1 ++ " " ++ s2
 
 showO :: Outputable a => a -> String
-showO = showSDocUnsafe . ppr 
+showO = showSDocUnsafe . ppr
 
-instance Show a => Show (EpAnn a) where 
-  show (EpAnn anchor ann comment) = "EpAnn " ++ show ann 
-  show EpAnnNotUsed               = "EpAnnNotUsed"  
+instance Show a => Show (EpAnn a) where
+  show (EpAnn anchor ann comment) = "EpAnn " ++ show ann
+  show EpAnnNotUsed               = "EpAnnNotUsed"
 
 -- belongs to HsDecl if trying to derive instance 
 {- instance Show (TyClDecl GhcPs) where show a = ""
@@ -328,11 +325,11 @@ instance Show (WarnDecls GhcPs) where show a = ""
 instance Show (ForeignDecl GhcPs) where show a = ""
 instance Show (StandaloneKindSig GhcPs) where show a = "" -}
 
-instance Show SrcSpanAnnA where 
-  show (SrcSpanAnn ann span) = show ann 
-  
-instance Show (SrcSpanAnn' (EpAnn AnnList)) where 
-  show (SrcSpanAnn n an) = showSDocUnsafe $ ppr n 
+instance Show SrcSpanAnnA where
+  show (SrcSpanAnn ann span) = show ann
+
+instance Show (SrcSpanAnn' (EpAnn AnnList)) where
+  show (SrcSpanAnn n an) = showSDocUnsafe $ ppr n
 
 instance Show EpAnnComments where
   show a = "" -- showSDocUnsafe $ ppr a
@@ -406,7 +403,7 @@ instance Show (HsLit a) where
 instance Show (HsOverLit GhcTc) where
   show (OverLit a b c) = show b ++ show c
 
-instance Show (OverLitVal) where 
+instance Show (OverLitVal) where
    show (HsIntegral   il) = show il            -- ^ Integer-looking literals;
    show (HsFractional fl) = show fl          -- ^ Frac-looking literals
    show (HsIsString   st fs) = show st       -- ^ String-looking literals
@@ -465,7 +462,7 @@ instance Show (HsRecField' (AmbiguousFieldOcc GhcTc) (GenLocated SrcSpanAnnA (Hs
 instance Show (HsRecFields GhcTc (GenLocated SrcSpanAnnA (HsExpr GhcTc))) where
   show k = ""
 instance Show GrhsAnn where
-  show s = showSDocUnsafe $ ppr s 
+  show s = showSDocUnsafe $ ppr s
 instance (Show a) => Show (Sig a) where
   show s = ""
 
@@ -497,7 +494,7 @@ instance Show TcEvBinds where
 
 
 ---- INSTANCES FOR PARSED SRC
-deriving instance Show HsModule  
+deriving instance Show HsModule
 
 instance Show AnnsModule where show a = ""
 

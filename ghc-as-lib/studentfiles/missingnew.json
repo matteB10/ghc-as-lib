@@ -6,7 +6,7 @@
   "solved_model": false,
   "feedback": "Your program is not defined on all possible input. We cannot give a definitive diagnosis, please continue implementing the solution.",
   "code": "fromBin :: [Int] -> Int\nformBin [] = 0\nfromBin [x] = x\nfromBin (x:xs) = x * 2 ^ (length xs) + fromBin(xs)",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nformBin [] = 0\nfromBin [x] = x\nfromBin (x:xs) = x * 2 ^ (length xs) + fromBin(xs)",
   "category": "Missing",
   "exerciseid": "haskell/encoding/fromBin"
@@ -18,7 +18,7 @@
   "solved_model": false,
   "feedback": "Your program is not defined on all possible input. We cannot give a definitive diagnosis, please continue implementing the solution.",
   "code": "fromBin :: [Int] -> Int\nfromBin [x] = x",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin [x] = x",
   "category": "Missing",
   "exerciseid": "haskell/encoding/fromBin"
@@ -30,7 +30,7 @@
   "solved_model": false,
   "feedback": "Your program is not defined on all possible input. We cannot give a definitive diagnosis, please continue implementing the solution.",
   "code": "fromBin :: [Int] -> Int\nfromBin [x] = x\nfromBin (x:xs) = x * 2 ^ (length xs) + fromBin xs",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin [x] = x\nfromBin (x:xs) = x * 2 ^ (length xs) + fromBin xs",
   "category": "Missing",
   "exerciseid": "haskell/encoding/fromBin"
@@ -42,7 +42,7 @@
   "solved_model": false,
   "feedback": "Your program is not defined on all possible input. We cannot give a definitive diagnosis, please continue implementing the solution.",
   "code": "mylength :: [a] -> Int\nmylength [x] = 1\nmylength (x:xs) = 1 + mylength xs",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "mylength :: [a] -> Int\nmylength [x] = 1\nmylength (x:xs) = 1 + mylength xs",
   "category": "Missing",
   "exerciseid": "haskell/list/mylength"
@@ -54,7 +54,7 @@
   "solved_model": false,
   "feedback": "Your program is not defined on all possible input. We cannot give a definitive diagnosis, please continue implementing the solution.",
   "code": "encode :: Eq a => [a] -> [(Int, a)]\nencode (x:xs) = (l, x) : encode rest\n  where\n    l = length (takeWhile (==x) (x:xs))\n    rest = dropWhile (==x) xs",
-  "typesig": "",
+  "typesig": "encode :: Eq a => [a] -> [(Int, a)]",
   "input": "encode :: Eq a => [a] -> [(Int, a)]\nencode (x:xs) = (l, x) : encode rest\n  where\n    l = length (takeWhile (==x) (x:xs))\n    rest = dropWhile (==x) xs",
   "category": "Missing",
   "exerciseid": "haskell/list/encode"
@@ -66,7 +66,7 @@
   "solved_model": false,
   "feedback": "Your program is not defined on all possible input. We cannot give a definitive diagnosis, please continue implementing the solution.",
   "code": "compress :: Eq a => [a] -> [a]\ncompress [x] = []\ncompress (x:y:ys)\n  | x == y = x : compress ys\n  | otherwise = x : compress (y:ys)\n",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "compress :: Eq a => [a] -> [a]\ncompress [x] = []\ncompress (x:y:ys)\n  | x == y = x : compress ys\n  | otherwise = x : compress (y:ys)\n",
   "category": "Missing",
   "exerciseid": "haskell/list/compress"
@@ -78,7 +78,7 @@
   "solved_model": false,
   "feedback": "Your program is not defined on all possible input. We cannot give a definitive diagnosis, please continue implementing the solution.",
   "code": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress (x:y:ys)\n  | x == y = x : compress ys\n  | otherwise = x : compress (y:ys)\n",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress (x:y:ys)\n  | x == y = x : compress ys\n  | otherwise = x : compress (y:ys)\n",
   "category": "Missing",
   "exerciseid": "haskell/list/compress"
@@ -90,7 +90,7 @@
   "solved_model": false,
   "feedback": "Your program is not defined on all possible input. We cannot give a definitive diagnosis, please continue implementing the solution.",
   "code": "fromBin :: [Int] -> Int\nfromBin (x : xs) = 5",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin (x : xs) = 5",
   "category": "Missing",
   "exerciseid": "haskell/encoding/fromBin"

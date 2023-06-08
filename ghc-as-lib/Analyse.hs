@@ -7,44 +7,47 @@ module Analyse where
 {-# LANGUAGE RankNTypes #-}
 
 import Data.Data
-import Control.Lens ( lengthOf, Traversal' ) 
-import Control.Lens hiding (universe, children ) 
+import Control.Lens ( lengthOf, Traversal' )
+import Control.Lens hiding (universe, children )
 
 
 
 import GHC.Core
 import GHC.Types.Var (Var)
 import Data.Generics.Uniplate.Data (universe, universeBi, transformBi, rewriteBi, rewriteBiM, transformBiM, Uniplate (descend), Biplate (..), childrenBi, children)
-import Similar 
+import Similar
 import Diff ((~~))
 import Utils (getAltExp)
 import GHC.Plugins
 import Data.Data.Lens (uniplate)
 import Data.List (nub)
-import Data.Generics.Biplate (biplateList)
+import Data.Generics.Biplate (biplateList, Biplate)
+import Data.Maybe (catMaybes, mapMaybe)
 
 
 
-hasRedundantPattern :: CoreProgram -> CoreProgram -> Bool  
+hasRedundantPattern :: CoreProgram -> CoreProgram -> Bool
 -- | Check if student program contains more case alternatives than the closest model solution
 --  we can use this together with testing, to determine if we have redundant patterns   
-hasRedundantPattern mp sp = 
+hasRedundantPattern mp sp =
                     go mpCases spCases
     where mpCases = [c | c@(Case e _ _ alts) <- universeBi mp :: [CoreExpr]]
           spCases = [c | c@(Case e _ _ alts) <- universeBi sp :: [CoreExpr]]
-          go :: [CoreExpr] -> [CoreExpr] -> Bool  
-          go (m:ms) (s:ss) = checkCase m s || length ms < length ss  
+          go :: [CoreExpr] -> [CoreExpr] -> Bool
+          go (m:ms) (s:ss) = checkCase m s || length ms < length ss
           go [] (s:sc) = True -- no case in model solution
-          go _ _       = False 
+          go _ _       = False
           checkCase e1 e2 = case (e1,e2) of
-            (Case e1 _ _ alts1,Case e2 _ _ alts2) | e1 ~= e2 -> length alts1 < length alts2 
+            (Case e1 _ _ alts1,Case e2 _ _ alts2) | e1 ~= e2 -> length alts1 < length alts2
                                                               || not (any (hasCase . getAltExp) alts1) && any (hasCase . getAltExp) alts2
-            (_,_) -> False 
-         
+            (_,_) -> False
 
-hasCase :: CoreExpr -> Bool 
+
+hasCase :: CoreExpr -> Bool
 hasCase e = not $ null [ex | ex@(Case {}) <- universe e, not (e ~= ex)]
-          
+
+hasCaseB :: CoreBind -> Bool
+hasCaseB e = not $ null [ex | ex@(Case {}) <- universeBi e :: [CoreExpr]]
 
 getRedundantPattern :: CoreProgram -> CoreProgram -> [Alt Var]
 -- | Check if student program contains more case alternatives than the model solution
@@ -88,3 +91,7 @@ getAllSubExprs (p:ps) = nub (a ++ b ++ c ++ d )
           --f = [e | e@(Case {}) <- universeBi p :: [CoreExpr]]
 
 
+missingBaseCase :: CoreProgram -> Maybe [Var]
+missingBaseCase p = return $ catMaybes $ concatMap missingBase p
+      where missingBase (Rec es) = map (\(v,e) -> if not (hasCase e) then Just v else Nothing) es 
+            missingBase b = [Just v | (Let (Rec ((v,e):es)) _) <- universeBi b :: [CoreExpr], not (hasCase e)] 

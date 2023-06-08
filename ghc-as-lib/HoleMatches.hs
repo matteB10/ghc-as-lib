@@ -34,6 +34,7 @@ getHoleMs _ _                           = []
 
 match :: CoreExpr -> CoreExpr -> [CoreExpr]
 match e1 e2 | isHolev e1                  = [e2]
+match (Tick _ (Tick _ e)) (Tick _ (Tick _ e')) = match e e' 
 match (Tick ct e) e'                      = match e e' 
 match e (Tick ct' e')                     | isHolev e = [Tick ct' e']
                                           | otherwise = match e e' 
@@ -83,7 +84,7 @@ match e1 e2 | isHolev e1                  = modify $ \s -> s {exps = e2 : exps s
 match _ _                                 = return ()  -}
 
 isHolev (Var var)  = take 4 (getOccString var) == "hole"
-isHolev (Tick t e) = isHolev e 
+--isHolev (Tick t e) = isHolev e 
 isHolev _ = False 
 
 getSrcSpan :: CoreExpr -> Maybe RealSrcSpan

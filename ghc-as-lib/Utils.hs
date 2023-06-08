@@ -28,7 +28,7 @@ import GHC.Core.TyCo.Rep
 import GHC.Utils.Encoding (utf8DecodeByteString)
 
 -- General imports 
-import Data.Maybe ( isNothing, fromJust, catMaybes, isJust )
+import Data.Maybe ( isNothing, fromJust, catMaybes, isJust, mapMaybe )
 import Data.Generics.Uniplate.Data
 import Control.Monad (when)
 
@@ -40,7 +40,7 @@ import GHC.Core.Predicate (isEvVar)
 import Data.Data ( Data )
 import qualified GHC.Types.Name.Occurrence as Occ
 import GHC.Types.Id.Info (IdDetails(..))
-import GHC (GenLocated(..), RealSrcSpan, ParsedModule, Ghc, HsLocalBindsLR (HsValBinds), LIdP, HsBindLR)
+import GHC (GenLocated(..), RealSrcSpan, ParsedModule, Ghc, HsLocalBindsLR (HsValBinds), LIdP, HsBindLR, isPrimTyCon)
 import GHC.Hs (HsMatchContext(..))
 import GHC.Types.SrcLoc (srcSpanToRealSrcSpan)
 import Data.Map (Map)
@@ -73,7 +73,7 @@ nl x y = x ++ "\n" ++ y
 cm x y = x ++ " , " ++ y
 
 strip :: String -> String
-strip = compress . lstrip . rstrip 
+strip = compress . lstrip . rstrip
 
 lstrip :: String -> String
 lstrip [] = []
@@ -96,7 +96,7 @@ getSig :: String -> ParsedSource -> Sig GhcPs
 -- | Get type signature matching given function name
 getSig n ps = head $ map (fromJust . get_type_sig) (getSigs ps)
     where get_type_sig sig = case sig of
-            ts@(TypeSig _ [name] _) | trace (showGhcUnsafe name ++ ":" ++ n) showGhcUnsafe name == n -> Just ts
+            ts@(TypeSig _ [name] _) | showGhcUnsafe name == n -> Just ts
             _ -> Nothing
 
 
@@ -123,9 +123,9 @@ nonEmpty :: [a] -> Bool
 nonEmpty = not . null
 
 
-getLocalDeclarations :: RealSrcSpan -> ParsedSource -> [LHsExpr GhcPs] -> [HsBindLR GhcPs GhcPs]
+getLocalDeclarations :: ParsedSource -> [LHsExpr GhcPs] -> [HsBindLR GhcPs GhcPs]
 -- | get local declarations matching a variable
-getLocalDeclarations rss ps@(L l hsm) exps = locDecls
+getLocalDeclarations ps@(L l hsm) exps = locDecls
     where rhsVars  = [lidp | ex@(L l (HsVar _ lidp)) <- universeBi exps :: [LHsExpr GhcPs]]
           valBinds = [b | b@(ValBinds {}) <- universeBi (hsmodDecls hsm) :: [HsValBindsLR GhcPs GhcPs]]
           locDecls = [fb | fb@(FunBind ext id' matches _) <- universeBi valBinds :: [HsBindLR GhcPs GhcPs], showGhcUnsafe id' `elem` map showGhcUnsafe rhsVars] -- should be replaced by getName or similar 
@@ -133,7 +133,7 @@ getLocalDeclarations rss ps@(L l hsm) exps = locDecls
 getHsVars :: RealSrcSpan -> [LHsExpr GhcPs] -> [LIdP GhcPs]
 -- | Get all variables in the RHS of a given source span and list of expressions
 getHsVars rss exps = vars
-    where rhs = getHsRhs (catMaybes $ filter isJust $ map (matchRealSpan rss) exps) 
+    where rhs = getHsRhs (mapMaybe (matchRealSpan rss) exps)
           vars = [lidp | ex@(L l (HsVar _ lidp)) <- universeBi rhs :: [LHsExpr GhcPs]]
 
 
@@ -141,18 +141,23 @@ getHsExprFromLoc :: RealSrcSpan -> ParsedSource -> Maybe (LHsExpr GhcPs)
 getHsExprFromLoc rss ps@(L l hsm) | nonEmpty locExps = return (head locExps) -- cannot have several expressions on same loc
                                   | otherwise        = Nothing
     where exps      = universeBi ps :: [LHsExpr GhcPs]
-          locExps = catMaybes $ filter isJust $ map (matchRealSpan rss) exps 
-          locDecls  = [c | ex@(ValBinds b c d) <- universeBi (hsmodDecls hsm) :: [HsValBindsLR GhcPs GhcPs]]
+          locExps = catMaybes $ filter isJust $ map (matchRealSpan rss) exps
+          --locDecls  = [b | (ValBinds _ b _) <- universeBi (hsmodDecls hsm) :: [HsValBindsLR GhcPs GhcPs]]
 
 
 getHsRhsFromLoc :: RealSrcSpan -> ParsedSource -> Maybe (LHsExpr GhcPs)
 getHsRhsFromLoc rss ps@(L l hsm) | nonEmpty locExDec = return (head locExDec)
                                  | otherwise         = Nothing
-    where locDecls = catMaybes $ filter isJust $ map (matchRealSpan rss) (hsmodDecls hsm)
+    where locDecls = mapMaybe (matchRealSpan rss) (hsmodDecls hsm)
           locExDec = getHsRhs locDecls
 
 getHsRhs :: Data a => a -> [LHsExpr GhcPs]
 getHsRhs decls = [c | ex@(L loc (GRHS a b c)) <- universeBi decls :: [GenLocated SrcSpan (GRHS GhcPs (LHsExpr GhcPs))]]
+
+getHsMultiLine ::  RealSrcSpan -> ParsedSource -> [HsBindLR GhcPs GhcPs]
+getHsMultiLine rss (L l hsm) = locDecls 
+    where valBinds = [b | b@(ValBinds {}) <- universeBi (hsmodDecls hsm) :: [HsValBindsLR GhcPs GhcPs]]
+          locDecls = [fb | fb@(FunBind ext id' matches _) <- universeBi valBinds :: [HsBindLR GhcPs GhcPs]] -- should be replaced by getName or similar 
 
 
 matchRealSpan :: RealSrcSpan -> GenLocated SrcSpanAnnA a -> Maybe (GenLocated SrcSpanAnnA a)
@@ -174,10 +179,11 @@ translateNames studMap modMap = Map.fromList (map go modList)
             Just s_src -> (m_src, s_src)
             Nothing -> (m_src,m_src) -- use model src name if no corresponding variable in student solution 
 
-keysToVals :: Map String String -> Map String String
+keysToVals :: Ord a => Map a a -> Map a a
 keysToVals mp = Map.fromList (zip vals keys)
    where keys = Map.keys mp
          vals = Map.elems mp
+
 
 substHs :: Map String String -> LHsExpr GhcPs -> LHsExpr GhcPs
 substHs names = rewriteBi $ \e -> case e :: LHsExpr GhcPs of
@@ -188,7 +194,7 @@ substHs names = rewriteBi $ \e -> case e :: LHsExpr GhcPs of
 fresh :: UniqSupply -> Var -> Var
 fresh us id =
     let uq = uniqFromSupply us
-        name = makeName "fresh" uq (mkGeneralSrcSpan (mkFastString "Dummy location"))
+        name = makeName (getOccString id) uq (mkGeneralSrcSpan (mkFastString "Dummy location"))
         id'  = setIdNotExported $ makeLocal $ setVarName id name -- reuse id information from top-level binder
     in id'
 
@@ -222,11 +228,15 @@ getBindTopVar :: CoreBind -> Var
 getBindTopVar (NonRec v _) = v
 getBindTopVar (Rec ((v,e):_)) = v
 
+getBinds :: [CoreBind] -> CoreBind -> [CoreBind]
+-- | Get all binders referencing another binder
+getBinds binds inlb = filter isUsed binds
+    where isUsed b = v `insB` b
+          v = getBindTopVar inlb
 
-getBinds :: [CoreBind] -> Var -> [CoreBind]
--- | Get all binders containing a certain variable
-getBinds binds v = [r | r <- binds, v `insB` r]
-
+isTyConApp :: Type -> Bool
+isTyConApp (TyConApp tc _) = True 
+isTyConApp _ = False
 
 isCaseExpr :: CoreExpr -> Bool
 isCaseExpr (Case {})  = True
@@ -270,12 +280,20 @@ isHoleVarExpr _ = False
 isEvOrTyVar :: Var -> Bool
 isEvOrTyVar v = isTyVar v || isEvVar v
 
+isSpecVar :: Var -> Bool
+isSpecVar v = "$" == take 1 (getOccString v)
+
+isWild :: Var -> Bool
+isWild v = "wild" == getOccString v
+
 isEvOrTyExp :: CoreExpr -> Bool
 -- | Is type or type/evidence variable
 isEvOrTyExp e = case e of
     (Var v)  -> isEvOrTyVar v
     (Type t) -> True
     _        -> False
+
+
 
 isTyOrTyVar :: CoreExpr -> Bool
 isTyOrTyVar (Type _)   = True
@@ -290,6 +308,10 @@ ins v e = or [v==v' | v' <- universeBi e :: [Var]]
 insB :: Data (Bind Var) => Var -> CoreBind -> Bool
 -- | Find if a variable is used somewhere in a binder
 insB n b = or [v==n | v <- universeBi b :: [Var]]
+
+isMutRec :: CoreBind -> CoreBind -> Bool
+-- | Check if two corebinds are mutually recursive
+isMutRec b b' = getBindTopVar b `insB` b' && getBindTopVar b' `insB` b
 
 subst :: Var -> Var -> CoreExpr -> CoreExpr
 subst v v' = --trace ("found subst" ++ show "["++ show v' ++ "->" ++ show v ++"]" ) $

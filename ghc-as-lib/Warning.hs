@@ -4,9 +4,10 @@ import GHC ( Severity (..), SrcSpan )
 import GHC.Driver.Session (WarnReason(..))
 import GHC.Types.Error (SDoc)
 import GHC.Driver.Ppr (showSDoc)
-import GHC.Utils.Logger (LogAction)
+import GHC.Utils.Logger (LogAction, defaultLogAction)
 import Data.IORef (IORef, modifyIORef)
 import Prelude hiding (span)
+import Control.Monad (when)
 
 
 data Warning = GhcWarn {reason :: WarnReason,
@@ -49,7 +50,8 @@ writeWarnings :: IORef [Warning] -> LogAction -> LogAction
 -- | write warnings to IORef
 writeWarnings ref action dflags reason sev span doc = do
   modifyIORef ref (GhcWarn reason sev span doc:)
-  noAction dflags reason sev span doc -- don't log any actions 
+  noAction dflags reason sev span doc 
+  -- replace noAction with defaultLogAction to output errors and warnings to stdout/stderr
 
 getWarnLoc :: [Warning] -> [SrcSpan]
 -- | Get location from warning

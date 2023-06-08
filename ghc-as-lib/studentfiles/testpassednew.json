@@ -6,7 +6,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin bits = sum $ zipWith (\\a b -> a * 2^b) bits (reverse [0 .. length bits - 1])\n",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin bits = sum $ zipWith (\\a b -> a * 2^b) bits (reverse [0 .. length bits - 1])\n",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -18,7 +18,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "palindrome :: Eq a => [a] -> Bool\npalindrome list = palindrome' list (reverse list)\n\npalindrome' [] [] = True\npalindrome' (x:list) (y:revlist) | x == y = palindrome' list revlist\n  | otherwise = False",
-  "typesig": "",
+  "typesig": "palindrome :: Eq a => [a] -> Bool",
   "input": "palindrome :: Eq a => [a] -> Bool\npalindrome list = palindrome' list (reverse list)\n\npalindrome' [] [] = True\npalindrome' (x:list) (y:revlist) | x == y = palindrome' list revlist\n  | otherwise = False",
   "category": "TestPassed",
   "exerciseid": "haskell/list/palindrome"
@@ -30,7 +30,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "dupli = concat . map (\\x -> [x,x]) ",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "dupli = concat . map (\\x -> [x,x]) ",
   "category": "TestPassed",
   "exerciseid": "haskell/list/dupli"
@@ -42,7 +42,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "--dupli = concat . map (\\x -> [x,x]) \ndupli = foldr (\\a acc -> [a,a] ++ acc ) []",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "--dupli = concat . map (\\x -> [x,x]) \ndupli = foldr (\\a acc -> [a,a] ++ acc ) []",
   "category": "TestPassed",
   "exerciseid": "haskell/list/dupli"
@@ -54,7 +54,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "--dupli = concat . map (\\x -> [x,x]) \ndupli = concatMap (\\x -> [x,x]) ",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "--dupli = concat . map (\\x -> [x,x]) \ndupli = concatMap (\\x -> [x,x]) ",
   "category": "TestPassed",
   "exerciseid": "haskell/list/dupli"
@@ -66,7 +66,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin = sum . foldl (\\acc b -> if b == 1 then b : (map ((*) 2) acc) else (map ((*)2) acc) ) []",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin = sum . foldl (\\acc b -> if b == 1 then b : (map ((*) 2) acc) else (map ((*)2) acc) ) []",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -78,7 +78,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin = foldl (\\acc b -> acc * 2 + b) 0",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin = foldl (\\acc b -> acc * 2 + b) 0",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -90,7 +90,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "primes = filter isPrime [2..]\n\nisPrime p = not $ any (\\q -> p `mod` q == 0) [2..p - 1]",
-  "typesig": "",
+  "typesig": "primes :: [Int]",
   "input": "primes = filter isPrime [2..]\n\nisPrime p = not $ any (\\q -> p `mod` q == 0) [2..p - 1]",
   "category": "TestPassed",
   "exerciseid": "haskell/list/primes"
@@ -102,7 +102,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin = sum . map (\\a -> 2 ^ fst a * snd a). zip [0..] . reverse",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin = sum . map (\\a -> 2 ^ fst a * snd a). zip [0..] . reverse",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -114,7 +114,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "mylength = length",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "mylength = length",
   "category": "TestPassed",
   "exerciseid": "haskell/list/mylength"
@@ -126,7 +126,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "\nencode = map (\\l -> (length l, head l)). group\n  where\n    group []           =  []\n    group (x:xs)       =  (x:ys) : group zs\n                           where (ys,zs) = span (== x) xs",
-  "typesig": "",
+  "typesig": "encode :: Eq a => [a] -> [(Int, a)]",
   "input": "\nencode = map (\\l -> (length l, head l)). group\n  where\n    group []           =  []\n    group (x:xs)       =  (x:ys) : group zs\n                           where (ys,zs) = span (== x) xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/encode"
@@ -138,7 +138,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "\ncompress = map (head) . group\n  where\n    group []           =  []\n    group (x:xs)       =  (x:ys) : group zs\n                           where (ys,zs) = span (== x) xs",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "\ncompress = map (head) . group\n  where\n    group []           =  []\n    group (x:xs)       =  (x:ys) : group zs\n                           where (ys,zs) = span (== x) xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/compress"
@@ -150,7 +150,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "compress :: [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs) = if x /= y then x : c else c\n  where c = compress $ y:xs",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "compress :: [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs) = if x /= y then x : c else c\n  where c = compress $ y:xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/compress"
@@ -162,7 +162,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin []  = 0\nfromBin [x] = x\nfromBin (x:xs) = x * 2 ^ (length xs) + fromBin xs",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin []  = 0\nfromBin [x] = x\nfromBin (x:xs) = x * 2 ^ (length xs) + fromBin xs",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -174,7 +174,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "--import Network.Socket hiding (send, sendTo, recv, recvFrom)\n\nfromBin [] = 0\nfromBin (x:xs) = x * 2^(length xs) + fromBin xs",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "--import Network.Socket hiding (send, sendTo, recv, recvFrom)\n\nfromBin [] = 0\nfromBin (x:xs) = x * 2^(length xs) + fromBin xs",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -186,7 +186,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "\n\nfromBin :: [Int] -> Int\nfromBin xs = fromBin' xs (length xs - 1)\n\nfromBin' :: [Int] -> Int -> Int\nfromBin' [] _ = 0\nfromBin' (x:xs) n = case x of\n    0 -> fromBin' xs (n-1)\n    1 -> product (replicate n 2) + fromBin' xs (n-1)",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "\n\nfromBin :: [Int] -> Int\nfromBin xs = fromBin' xs (length xs - 1)\n\nfromBin' :: [Int] -> Int -> Int\nfromBin' [] _ = 0\nfromBin' (x:xs) n = case x of\n    0 -> fromBin' xs (n-1)\n    1 -> product (replicate n 2) + fromBin' xs (n-1)",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -198,7 +198,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "\nencode :: Eq a => [a] -> [(Int, a)]\nencode [] = []\nencode (x:xs) = (1 + length xs', x) : encode ys\n    where\n        xs' = takeWhile (== x) xs\n        ys  = dropWhile (== x) xs",
-  "typesig": "",
+  "typesig": "encode :: Eq a => [a] -> [(Int, a)]",
   "input": "\nencode :: Eq a => [a] -> [(Int, a)]\nencode [] = []\nencode (x:xs) = (1 + length xs', x) : encode ys\n    where\n        xs' = takeWhile (== x) xs\n        ys  = dropWhile (== x) xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/encode"
@@ -210,7 +210,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "\n\nmylength :: [a] -> Int\nmylength = foldr (\\x z -> z + 1) 0",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "\n\nmylength :: [a] -> Int\nmylength = foldr (\\x z -> z + 1) 0",
   "category": "TestPassed",
   "exerciseid": "haskell/list/mylength"
@@ -222,7 +222,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "\n\npalindrome :: Eq a => [a] -> Bool\npalindrome xs = and (map (\\(a, b) -> a == b) (zip xs (reverse xs)))",
-  "typesig": "",
+  "typesig": "palindrome :: Eq a => [a] -> Bool",
   "input": "\n\npalindrome :: Eq a => [a] -> Bool\npalindrome xs = and (map (\\(a, b) -> a == b) (zip xs (reverse xs)))",
   "category": "TestPassed",
   "exerciseid": "haskell/list/palindrome"
@@ -234,7 +234,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "mylength :: [a] -> Int\nmylength [] = 0\nmylength [x] = 1\nmylength (x:xs) = 1 + mylength xs",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "mylength :: [a] -> Int\nmylength [] = 0\nmylength [x] = 1\nmylength (x:xs) = 1 + mylength xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/mylength"
@@ -246,7 +246,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse [x] = [x]\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse [x] = [x]\nmyreverse (x:xs) = myreverse xs ++ [x]",
   "category": "TestPassed",
   "exerciseid": "haskell/list/myreverse"
@@ -258,7 +258,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin []     = 0\nfromBin (0:xs) = fromBin xs\nfromBin (1:xs) = 2^(length xs) + fromBin xs",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin []     = 0\nfromBin (0:xs) = fromBin xs\nfromBin (1:xs) = 2^(length xs) + fromBin xs",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -270,7 +270,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "encode :: Eq a => [a] -> [(Int, a)]\nencode [] = []\nencode (x:xs) = (l, x) : encode rest\n  where\n    l = length (takeWhile (==x) (x:xs))\n    rest = dropWhile (==x) xs",
-  "typesig": "",
+  "typesig": "encode :: Eq a => [a] -> [(Int, a)]",
   "input": "encode :: Eq a => [a] -> [(Int, a)]\nencode [] = []\nencode (x:xs) = (l, x) : encode rest\n  where\n    l = length (takeWhile (==x) (x:xs))\n    rest = dropWhile (==x) xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/encode"
@@ -282,7 +282,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin bits =  foldl (\\acc bit -> 2*acc + bit) 0 bits",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin bits =  foldl (\\acc bit -> 2*acc + bit) 0 bits",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -294,7 +294,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = reverse xs ++ [x]",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = reverse xs ++ [x]",
   "category": "TestPassed",
   "exerciseid": "haskell/list/myreverse"
@@ -306,7 +306,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse xs = foldl (\\x y -> y:x) [] xs\n  ",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse xs = foldl (\\x y -> y:x) [] xs\n  ",
   "category": "TestPassed",
   "exerciseid": "haskell/list/myreverse"
@@ -318,7 +318,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "\n\nprimes :: [Int]\nprimes = filter isPrime (2:[3,5..])\n\nisPrime :: Int -> Bool\nisPrime x = foldr (\\y z -> (mod x y /= 0) && z) True (takeWhile (< x) (2:[3,5..]))\n",
-  "typesig": "",
+  "typesig": "primes :: [Int]",
   "input": "\n\nprimes :: [Int]\nprimes = filter isPrime (2:[3,5..])\n\nisPrime :: Int -> Bool\nisPrime x = foldr (\\y z -> (mod x y /= 0) && z) True (takeWhile (< x) (2:[3,5..]))\n",
   "category": "TestPassed",
   "exerciseid": "haskell/list/primes"
@@ -330,7 +330,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) (reverse xs) (map (\\x -> 2^x) [0..length xs])",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) (reverse xs) (map (\\x -> 2^x) [0..length xs])",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -342,7 +342,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) xs (map (\\x -> 2^x) $ reverse l)\n  where l = [0..length xs - 1]\n  ",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) xs (map (\\x -> 2^x) $ reverse l)\n  where l = [0..length xs - 1]\n  ",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -354,7 +354,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) xs (map (2^) $ reverse l)\n  where l = [0..length xs - 1]\n  ",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) xs (map (2^) $ reverse l)\n  where l = [0..length xs - 1]\n  ",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -366,7 +366,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) xs $ map (2^) $ reverse l\n  where l = [0..length xs - 1]\n  ",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) xs $ map (2^) $ reverse l\n  where l = [0..length xs - 1]\n  ",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -378,7 +378,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin xs = foldl (\\x y -> x*2 + y) 0 xs",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin xs = foldl (\\x y -> x*2 + y) 0 xs",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -390,7 +390,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "compress :: Eq a => [a] -> [a]\ncompress []  = []\ncompress [x] = [x]\ncompress (x:y:ys)\n  | x == y = x : compress ys\n  | otherwise = x : compress (y:ys)\n",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "compress :: Eq a => [a] -> [a]\ncompress []  = []\ncompress [x] = [x]\ncompress (x:y:ys)\n  | x == y = x : compress ys\n  | otherwise = x : compress (y:ys)\n",
   "category": "TestPassed",
   "exerciseid": "haskell/list/compress"
@@ -402,7 +402,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin [] = 0\nfromBin x  = fromBin' (reverse x) 1\n\nfromBin' :: [Int] -> Int -> Int\nfromBin' [x] i    = x * i\nfromBin' (x:xs) i = (x * i) + fromBin' xs (i * 2)",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin [] = 0\nfromBin x  = fromBin' (reverse x) 1\n\nfromBin' :: [Int] -> Int -> Int\nfromBin' [x] i    = x * i\nfromBin' (x:xs) i = (x * i) + fromBin' xs (i * 2)",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -414,7 +414,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin [] = 0\nfromBin [x] = x\nfromBin xs = 2*(fromBin (init xs)) + last xs",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin [] = 0\nfromBin [x] = x\nfromBin xs = 2*(fromBin (init xs)) + last xs",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -426,7 +426,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "dupli :: [a] -> [a]\ndupli [] = []\ndupli [a] = [a,a]\ndupli (x:xs) = x:x: dupli xs",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "dupli :: [a] -> [a]\ndupli [] = []\ndupli [a] = [a,a]\ndupli (x:xs) = x:x: dupli xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/dupli"
@@ -438,7 +438,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "mylength :: [a] -> Int\nmylength [] = 0\nmylength [a] = 1\nmylength (x:xs) = 1 + mylength xs",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "mylength :: [a] -> Int\nmylength [] = 0\nmylength [a] = 1\nmylength (x:xs) = 1 + mylength xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/mylength"
@@ -450,7 +450,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse [a] = [a]\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse [a] = [a]\nmyreverse (x:xs) = myreverse xs ++ [x]",
   "category": "TestPassed",
   "exerciseid": "haskell/list/myreverse"
@@ -462,7 +462,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "palindrome :: Eq a => [a] -> Bool\npalindrome [] = True\npalindrome [a] = True\npalindrome (x:xs) = x == last xs",
-  "typesig": "",
+  "typesig": "palindrome :: Eq a => [a] -> Bool",
   "input": "palindrome :: Eq a => [a] -> Bool\npalindrome [] = True\npalindrome [a] = True\npalindrome (x:xs) = x == last xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/palindrome"
@@ -474,7 +474,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "palindrome :: Eq a => [a] -> Bool\npalindrome [] = True\npalindrome [a] = True\npalindrome (x:xs) = x == last xs && True",
-  "typesig": "",
+  "typesig": "palindrome :: Eq a => [a] -> Bool",
   "input": "palindrome :: Eq a => [a] -> Bool\npalindrome [] = True\npalindrome [a] = True\npalindrome (x:xs) = x == last xs && True",
   "category": "TestPassed",
   "exerciseid": "haskell/list/palindrome"
@@ -486,7 +486,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "palindrome :: Eq a => [a] -> Bool\npalindrome [] = True\npalindrome [a] = True\npalindrome (x:xs) = x == last xs && palindrome (tail (reverse xs))",
-  "typesig": "",
+  "typesig": "palindrome :: Eq a => [a] -> Bool",
   "input": "palindrome :: Eq a => [a] -> Bool\npalindrome [] = True\npalindrome [a] = True\npalindrome (x:xs) = x == last xs && palindrome (tail (reverse xs))",
   "category": "TestPassed",
   "exerciseid": "haskell/list/palindrome"
@@ -498,7 +498,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "myreverse' ys []     = ys\nmyreverse' ys (x:xs) = myreverse' (x:ys) xs\nmyreverse = myreverse' []",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse' ys []     = ys\nmyreverse' ys (x:xs) = myreverse' (x:ys) xs\nmyreverse = myreverse' []",
   "category": "TestPassed",
   "exerciseid": "haskell/list/myreverse"
@@ -510,7 +510,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "myreverse = myreverse' []\nmyreverse' ys []     = ys\nmyreverse' ys (x:xs) = myreverse' (x:ys) xs",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse = myreverse' []\nmyreverse' ys []     = ys\nmyreverse' ys (x:xs) = myreverse' (x:ys) xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/myreverse"
@@ -522,7 +522,7 @@
   "solved_model": true,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) (iterate (*2) 1) (reverse xs)\n",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin xs = sum $ zipWith (*) (iterate (*2) 1) (reverse xs)\n",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -534,7 +534,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin [] = 0\nfromBin (x:xs) = x*2^(length xs) + fromBin xs",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin [] = 0\nfromBin (x:xs) = x*2^(length xs) + fromBin xs",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -546,7 +546,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "compress :: Eq a => [a] -> [a]\ncompress (x:y:ys)\n    | x == y = compress (y:ys)\n    | otherwise = x : compress (y:ys)\ncompress ys = ys",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "compress :: Eq a => [a] -> [a]\ncompress (x:y:ys)\n    | x == y = compress (y:ys)\n    | otherwise = x : compress (y:ys)\ncompress ys = ys",
   "category": "TestPassed",
   "exerciseid": "haskell/list/compress"
@@ -558,7 +558,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "dupli :: [a] -> [a]\ndupli []     = []\ndupli [a]    = [a,a]\ndupli (x:xs) = [x,x] ++ dupli xs ",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "dupli :: [a] -> [a]\ndupli []     = []\ndupli [a]    = [a,a]\ndupli (x:xs) = [x,x] ++ dupli xs ",
   "category": "TestPassed",
   "exerciseid": "haskell/list/dupli"
@@ -570,7 +570,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "palindrome :: Eq a => [a] -> Bool\npalindrome [] = True\npalindrome xs\n    | head xs == last xs = True && palindrome (drop 1 (take (length xs - 1) xs))\n    | otherwise = False",
-  "typesig": "",
+  "typesig": "palindrome :: Eq a => [a] -> Bool",
   "input": "palindrome :: Eq a => [a] -> Bool\npalindrome [] = True\npalindrome xs\n    | head xs == last xs = True && palindrome (drop 1 (take (length xs - 1) xs))\n    | otherwise = False",
   "category": "TestPassed",
   "exerciseid": "haskell/list/palindrome"
@@ -582,7 +582,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin bits = foldl (\\acc bit -> acc * 2 + bit) 0 bits",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin bits = foldl (\\acc bit -> acc * 2 + bit) 0 bits",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -594,7 +594,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin = foldl (\\x y -> 2*x + y) 0",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin = foldl (\\x y -> 2*x + y) 0",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"
@@ -606,7 +606,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "palindrome :: Eq a => [a] -> Bool\npalindrome xs = reverse xs == xs",
-  "typesig": "",
+  "typesig": "palindrome :: Eq a => [a] -> Bool",
   "input": "palindrome :: Eq a => [a] -> Bool\npalindrome xs = reverse xs == xs",
   "category": "TestPassed",
   "exerciseid": "haskell/list/palindrome"
@@ -618,7 +618,7 @@
   "solved_model": false,
   "feedback": "Your solution passed all tests! However, it is different from the solutions we have constructed.",
   "code": "fromBin :: [Int] -> Int\nfromBin xs = calcHelper xs (length xs - 1)\n\ncalcHelper :: [Int] -> Int -> Int\ncalcHelper [] _ = 0\ncalcHelper [x] _ = x\ncalcHelper (x:xs) n | x == 1 = 2^n + calcHelper xs (n-1)\n                    | otherwise = calcHelper xs (n-1)",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin xs = calcHelper xs (length xs - 1)\n\ncalcHelper :: [Int] -> Int -> Int\ncalcHelper [] _ = 0\ncalcHelper [x] _ = x\ncalcHelper (x:xs) n | x == 1 = 2^n + calcHelper xs (n-1)\n                    | otherwise = calcHelper xs (n-1)",
   "category": "TestPassed",
   "exerciseid": "haskell/encoding/fromBin"

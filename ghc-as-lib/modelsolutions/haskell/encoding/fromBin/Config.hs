@@ -11,10 +11,10 @@
 
 module Config where
 
-import Data.List (unfoldr)
-import Test.QuickCheck
+-- import Data.List (unfoldr)
+-- import Test.QuickCheck
 
-properties :: [([Int] -> Int) -> Property]
+{- properties :: [([Int] -> Int) -> Property]
 properties = map withBits [propModel, propSound, propDivByTwo]
   where
     withBits prop = forAll genBin . prop
@@ -42,4 +42,4 @@ toBin = reverse . unfoldr f
 genBin :: Gen [Int]
 genBin = let max = length (toBin maxBound) in do
     bs <- arbitrary >>=  return . map (\b -> if b then 1 else 0)
-    return $ take max $ dropWhile (== 0) bs
+    return $ take max $ dropWhile (== 0) bs -}

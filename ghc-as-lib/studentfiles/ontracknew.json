@@ -6,7 +6,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "dupli = foldl ? ?",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "dupli = foldl  _  _",
   "category": "OnTrack",
   "exerciseid": "haskell/list/dupli"
@@ -18,7 +18,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "dupli = ?",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "dupli =  _",
   "category": "OnTrack",
   "exerciseid": "haskell/list/dupli"
@@ -30,22 +30,10 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "dupli = foldl (\\x acc -> ?) ?",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "dupli = foldl (\\x acc ->  _)  _",
   "category": "OnTrack",
   "exerciseid": "haskell/list/dupli"
- },
- {
-  "id": 3651,
-  "email": "paulso@net.chalmers.se",
-  "solved": false,
-  "solved_model": false,
-  "feedback": "You have submitted a similar term. Maybe you inserted or removed parentheses?",
-  "code": "",
-  "typesig": "",
-  "input": "",
-  "category": "OnTrack",
-  "exerciseid": "haskell/list/"
  },
  {
   "id": 3215,
@@ -54,7 +42,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "--dupli = concat . map (\\x -> [x,x]) \ndupli = ?",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "--dupli = concat . map (\\x -> [x,x]) \ndupli =  _",
   "category": "OnTrack",
   "exerciseid": "haskell/list/dupli"
@@ -66,7 +54,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "--dupli = concat . map (\\x -> [x,x]) \ndupli = concatMap ?",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "--dupli = concat . map (\\x -> [x,x]) \ndupli = concatMap  _",
   "category": "OnTrack",
   "exerciseid": "haskell/list/dupli"
@@ -78,7 +66,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "fromBin = ?",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin =  _",
   "category": "OnTrack",
   "exerciseid": "haskell/encoding/fromBin"
@@ -90,7 +78,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "fromBin = foldl ? ?",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin = foldl  _  _",
   "category": "OnTrack",
   "exerciseid": "haskell/encoding/fromBin"
@@ -102,7 +90,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "fromBin = \n  foldl ? 0",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin = \n  foldl  _ 0",
   "category": "OnTrack",
   "exerciseid": "haskell/encoding/fromBin"
@@ -114,7 +102,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "fromBin =\n   foldl ? 0\n   where\n       op ? ? =\n           ?",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin =\n   foldl  _ 0\n   where\n       op  _  _ =\n            _",
   "category": "OnTrack",
   "exerciseid": "haskell/encoding/fromBin"
@@ -126,8 +114,8 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "encode :: Eq a => [a] -> [(Int, a)]\nencode [] = []\n?",
-  "typesig": "",
-  "input": "encode :: Eq a => [a] -> [(Int, a)]\nencode [] = []\n _",
+  "typesig": "encode :: Eq a => [a] -> [(Int, a)]",
+  "input": "encode :: Eq a => [a] -> [(Int, a)]\nencode [] = []",
   "category": "OnTrack",
   "exerciseid": "haskell/list/encode"
  },
@@ -138,7 +126,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "fromBin :: [Int] -> Int\nfromBin xs = ?",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin xs =  _",
   "category": "OnTrack",
   "exerciseid": "haskell/encoding/fromBin"
@@ -150,7 +138,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "compress :: Eq a => [a] -> [a]\ncompress xs = ?\n",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "compress :: Eq a => [a] -> [a]\ncompress xs =  _\n",
   "category": "OnTrack",
   "exerciseid": "haskell/list/compress"
@@ -162,7 +150,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "mylength :: [a] -> Int\nmylength [] = 0",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "mylength :: [a] -> Int\nmylength [] = 0",
   "category": "OnTrack",
   "exerciseid": "haskell/list/mylength"
@@ -174,7 +162,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "fromBin xs = ?",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin xs =  _",
   "category": "OnTrack",
   "exerciseid": "haskell/encoding/fromBin"
@@ -186,7 +174,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "myreverse :: [a] -> [a]\nmyreverse (x:xs) = (myreverse xs) ++ [x]",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse :: [a] -> [a]\nmyreverse (x:xs) = (myreverse xs) ++ [x]",
   "category": "OnTrack",
   "exerciseid": "haskell/list/myreverse"
@@ -198,7 +186,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "myreverse [] = []\nmyreverse (x:xs) = ?",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse [] = []\nmyreverse (x:xs) =  _",
   "category": "OnTrack",
   "exerciseid": "haskell/list/myreverse"
@@ -210,7 +198,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "mylength :: [a] -> Int\nmylength [] = ?",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "mylength :: [a] -> Int\nmylength [] =  _",
   "category": "OnTrack",
   "exerciseid": "haskell/list/mylength"
@@ -222,7 +210,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "fromBin :: [Int] -> Int\nfromBin = ?\n",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin =  _\n",
   "category": "OnTrack",
   "exerciseid": "haskell/encoding/fromBin"
@@ -234,7 +222,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "dupli :: [a] -> [a] \ndupli [] = []\n",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "dupli :: [a] -> [a] \ndupli [] = []\n",
   "category": "OnTrack",
   "exerciseid": "haskell/list/dupli"
@@ -246,7 +234,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress (x:y:ys)\n    | x == y = compress (y:ys)\n    | otherwise = x : compress (y:ys)",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress (x:y:ys)\n    | x == y = compress (y:ys)\n    | otherwise = x : compress (y:ys)",
   "category": "OnTrack",
   "exerciseid": "haskell/list/compress"
@@ -258,7 +246,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "repli :: [a] -> Int -> [a]\nrepli = ?",
-  "typesig": "",
+  "typesig": "repli :: [a] -> Int -> [a]",
   "input": "repli :: [a] -> Int -> [a]\nrepli =  _",
   "category": "OnTrack",
   "exerciseid": "haskell/list/repli"
@@ -270,7 +258,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "primes :: [Int]\nprimes = ?",
-  "typesig": "",
+  "typesig": "primes :: [Int]",
   "input": "primes :: [Int]\nprimes =  _",
   "category": "OnTrack",
   "exerciseid": "haskell/list/primes"
@@ -282,7 +270,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "mylength :: [a] -> Int\nmylength = ?",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "mylength :: [a] -> Int\nmylength =  _",
   "category": "OnTrack",
   "exerciseid": "haskell/list/mylength"
@@ -294,7 +282,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "fromBin :: [Int] -> Int\nfromBin = ? . ?",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin =  _ .  _",
   "category": "OnTrack",
   "exerciseid": "haskell/encoding/fromBin"
@@ -306,7 +294,7 @@
   "solved_model": false,
   "feedback": "Correct.",
   "code": "fromBin :: [Int] -> Int\nfromBin = foldl ? ?\n",
-  "typesig": "",
+  "typesig": "fromBin :: [Int] -> Int",
   "input": "fromBin :: [Int] -> Int\nfromBin = foldl  _  _\n",
   "category": "OnTrack",
   "exerciseid": "haskell/encoding/fromBin"

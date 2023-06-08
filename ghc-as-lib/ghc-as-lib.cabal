@@ -18,6 +18,56 @@ version:            0.1.0.0
 
 extra-source-files: CHANGELOG.md
 
+executable test 
+  main-is: BenchMark.hs
+  build-depends: criterion
+                ,base >=4.16
+                ,ghc-paths 
+                ,ghc >=9.2.5 && < 9.3
+                ,ghc-boot
+                ,ghc-prim
+                ,ghc-exactprint
+                ,filepath 
+                ,containers
+                ,transformers
+                ,QuickCheck
+                ,uniplate
+                ,exceptions
+                ,text 
+                ,lens 
+                ,directory
+                ,random
+                ,comonad 
+                ,data-default
+                ,optparse-applicative
+                ,template-haskell 
+                ,utility-ht
+                ,aeson
+                ,temporary
+                ,bytestring
+                ,splint 
+                ,parsec
+                ,text-replace
+
+  other-modules: Similar 
+                ,Instance 
+                ,Transform 
+                ,Utils
+                ,Test 
+                ,CompileHs
+                ,Parsers
+                ,HoleMatches
+                ,Print
+                ,Analyse
+                ,Diff
+                ,HoleMatches
+                ,Instance
+                ,Feedback
+                ,Warning
+                ,Pragmas
+                ,Annotation
+                ,Compile 
+
 library
     exposed-modules:  Compile
     build-depends:    base >=4.16
@@ -30,7 +80,7 @@ library
                       ,containers
                       ,transformers
                       ,QuickCheck
-                      ,uniplate == 1.6.13
+                      ,uniplate
                       ,exceptions
                       ,text 
                       ,lens 
@@ -65,4 +115,5 @@ library
                       ,Feedback
                       ,Warning
                       ,Pragmas 
+                      ,Annotation
 

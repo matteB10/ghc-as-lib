@@ -1,10 +1,12 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use isJust" #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE PatternGuards #-}
 module Similar where
 
 
-import GHC.Core ( Expr(..), CoreExpr, CoreBndr, Bind(..), CoreProgram, Alt(..), AltCon(..))
+import GHC.Core ( Expr(..), CoreExpr, CoreBndr, Bind(..), CoreProgram, Alt(..), AltCon(..), CoreBind)
 import GHC.Unit.Types
 import GHC.Types.Var (Var(..), isTyVar, tyVarKind, isTcTyVar, isId)
 import GHC.Core.TyCo.Rep (Type(..), Kind, TyLit (StrTyLit), AnonArgFlag (VisArg), Coercion)
@@ -20,12 +22,20 @@ import GHC.Core.DataCon (DataCon(..), dataConName)
 import GHC.Utils.Outputable (showSDocUnsafe, Outputable (ppr))
 import GHC.Types.Literal (Literal(..), LitNumType)
 
-import Utils ( isHoleVar, sp, isHoleVarExpr, isHoleExpr, isPatError, isPatErrVar, getAltExp, isCaseExpr, nl, isAppToHole)
+import Utils
+    ( isCaseExpr,
+      isHoleExpr,
+      isPatError,
+      isHoleVar,
+      isHoleVarExpr,
+      getAltExp,
+      isVarMod )
 import GHC.Core.Coercion (eqCoercion)
 import GHC.Core.Utils (exprType)
+import Data.Generics.Uniplate.Data (rewriteBi, Biplate)
 
 class Similar a where
-    (~=) :: a -> a -> Bool
+    (~=) ::  a -> a -> Bool
     (~>)  :: a -> a -> Bool
 
 instance Similar CoreProgram where
@@ -41,16 +51,18 @@ instance Similar CoreProgram where
 --- Without trace -------------------------------------
 instance Similar (Bind Var) where
     (Rec es) ~> (Rec es')          = es ~> es' 
-    (NonRec v e) ~> (NonRec v' e') = v ~> v' && e ~> e'
-    (NonRec v e) ~> Rec [(v',e')]  = v ~> v' && e ~> e'
-    _ ~> _                         = False
+    (NonRec v e) ~> (NonRec v' e') | isVarMod v, isVarMod v' = True -- disregard module info binders 
+                                   | otherwise = v ~> v' && e ~> e'
+    (NonRec v e) ~> Rec ((v',e'):_) = v ~> v' && e ~> e'
+    _ ~> _                          = False
 
     (Rec es) ~= (Rec es')          = es ~= es'
-    (NonRec v e) ~= (NonRec v' e') = v ~= v' && e ~= e'
+    (NonRec v e) ~= (NonRec v' e') | isVarMod v, isVarMod v' = True -- disregard module info binders 
+                                   | otherwise = v ~= v' && e ~= e'
     x ~= y = False
 
 instance Similar [(Var,Expr Var)] where
-    es ~> es' = all (\((b,e),(b',e')) -> b ~> b' && e ~> e') (zip es es') && length es == length es' 
+    es ~> es' = all (\((b,e),(b',e')) -> b ~> b' && e ~> e') (zip es es') 
     es ~= es' = all (\((b,e),(b',e')) -> b ~= b' && e ~= e') (zip es es') && length es == length es' 
 
 instance Similar (Expr Var) where
@@ -58,7 +70,7 @@ instance Similar (Expr Var) where
     (Type t) ~> (Type t')                   = t ~> t'
     (Lit l)  ~> (Lit l')                    = l ~> l'
     (App (App f e) a) ~> (App (App f' e') a') | isCommutative f
-                                               , f ~> f' = (e ~> e' && a ~> a') || e ~> a' && e' ~> a
+                                              , f ~> f' = (e ~> e' && a ~> a') || e ~> a' && e' ~> a
     (App e arg) ~> (App e' arg')            = e ~> e' && arg ~> arg'
     (Lam b e) ~> (Lam b' e')                = b  ~> b' && e ~> e' 
     (Case e v t as) ~> (Case e' v' t' as')  = e ~> e' && v ~> v' && t  ~> t' && as ~> as'
@@ -107,17 +119,23 @@ instance Similar Literal where
   (~=) = (~>)
 
 instance Similar [Alt Var] where
-    []     ~> ys = True  -- predecessor relation is a lot more liberal, disregarding order of the list (and missing cases)
-    (x:xs) ~> ys = any (x ~>) ys && xs ~> ys  
-        --all (uncurry (~>)) (zip xs ys)
+    []     ~> _  = True 
+    (x:xs) ~> ys = matchUnordered x ys && xs ~> ys   
+        where matchUnordered x []     = False 
+              matchUnordered x (y:ys) | x ~> y    = True  
+                                      | otherwise = matchUnordered x ys 
+              
     xs ~= ys = all (uncurry (~=)) (zip xs ys) 
                && length xs == length ys 
 
 instance Similar (Alt Var) where
-    (Alt ac vs e) ~> (Alt ac' vs' e') | isPatError e 
-                                      , not (isPatError e') = ac ~> ac' && vs ~> vs' -- if pattern error, student has missing cases, we dont check nested cases
-                                      | otherwise = compareAll
-                where compareAll = ac ~> ac' && vs ~> vs' && e ~> e'
+    a@(Alt ac vs e) ~> (Alt ac' vs' e') 
+            | isPatError e , not (isPatError e') = compareAlt -- if pattern error, student has missing cases, we dont check nested cases
+            | not (isCaseExpr e) , isCaseExpr e', not (e ~> e') 
+                                                = compareAlt && matchWithAlt a e' -- if comparing nested cases in model, need stricter check on expression
+            | otherwise = compareAlt && e ~> e' 
+        where compareAlt = ac ~> ac' && vs ~> vs'
+              matchWithAlt (Alt ac _ e) (Case e' _ _ as) = any (\(Alt ac' _ e') -> ac ~> ac' && e ~> e') as 
     (Alt ac vs e) ~= (Alt ac' vs' e')  = ac ~= ac' && vs ~= vs' && e ~= e'
 
 instance Similar [Var] where
@@ -180,3 +198,16 @@ isCommutative _ = False
                                                 (App f args) | isHoleVarExpr args -> f ~> e' 
                                                              | otherwise          -> match args e' 
                                                 ex -> trace ("GERE:" ++ show ex ++ "L") False  -}
+r :: BiplateFor a => a -> a 
+r = rewriteBi remTick 
+    where remTick :: CoreExpr -> Maybe CoreExpr 
+          remTick ex = case ex of 
+            (Tick _ e) -> Just e 
+            e -> Nothing 
+
+class ( Biplate b CoreProgram, Biplate b CoreBind, Biplate b CoreExpr) 
+      => BiplateFor b
+instance BiplateFor CoreProgram      where
+instance BiplateFor CoreBind         where
+instance BiplateFor CoreExpr         where
+

@@ -40,9 +40,8 @@ instance Diff (Bind Var) where
     (Rec es) ~~ (Rec es') = sum (zipWith (curry (\((b,e),(b',e')) -> b ~~ b' + e ~~ e')) es es') + abs (length es - length es')
     (NonRec v e) ~~ (NonRec v' e') = v ~~ v' + e ~~ e'
     x ~~ y  = case (x,y) of 
-        (NonRec v e,Rec ((v',e'):es))  -> v ~~ v' + e ~~ e' + length es 
+        (NonRec v e,Rec ((v',e'):es))  -> v ~~ v' + e ~~ e' + length es  
         (Rec ((v',e'):es),NonRec v e)  -> v ~~ v' + e ~~ e' + length es 
-
 
 instance Diff (Expr Var) where
     (Var id) ~~ (Var id')                  = id ~~ id'
@@ -55,8 +54,7 @@ instance Diff (Expr Var) where
     (Let b e)   ~~ (Let b' e')             = b ~~ b' + e ~~ e'
     (Coercion c) ~~ (Coercion c')          = c ~~ c'
     x ~~ y                                 | isHoleExpr x || isHoleExpr y = 0 
-                                           | otherwise = --trace (show x ++ " AGAINST " ++ show y) $
-                                                         1 + getDiff xc yc 
+                                           | otherwise = 1 + getDiff xc yc 
         where xc = children x 
               yc = children y 
               getDiff (s:ss) (m:ms) = s ~~ m + getDiff ss ms  

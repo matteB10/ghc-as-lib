@@ -6,7 +6,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "myreverse [] = []\nmyreverse (x : xs) = myreverse xs ++ [x]",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse [] = []\nmyreverse (x : xs) = myreverse xs ++ [x]",
   "category": "Complete",
   "exerciseid": "haskell/list/myreverse"
@@ -18,7 +18,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "--dupli = concat . map (\\x -> [x,x]) \ndupli = foldl (\\acc a -> acc ++ [a,a] ) []",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "--dupli = concat . map (\\x -> [x,x]) \ndupli = foldl (\\acc a -> acc ++ [a,a] ) []",
   "category": "Complete",
   "exerciseid": "haskell/list/dupli"
@@ -30,7 +30,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "--dupli = concat . map (\\x -> [x,x]) \ndupli = concatMap (replicate 2)",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "--dupli = concat . map (\\x -> [x,x]) \ndupli = concatMap (replicate 2)",
   "category": "Complete",
   "exerciseid": "haskell/list/dupli"
@@ -42,7 +42,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "\npalindrome a = a == reverse a",
-  "typesig": "",
+  "typesig": "palindrome :: Eq a => [a] -> Bool",
   "input": "\npalindrome a = a == reverse a",
   "category": "Complete",
   "exerciseid": "haskell/list/palindrome"
@@ -54,7 +54,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x : x : dupli xs",
   "category": "Complete",
   "exerciseid": "haskell/list/dupli"
@@ -66,7 +66,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "repli :: [a] -> Int -> [a]\nrepli l n = concatMap (replicate n) l",
-  "typesig": "",
+  "typesig": "repli :: [a] -> Int -> [a]",
   "input": "repli :: [a] -> Int -> [a]\nrepli l n = concatMap (replicate n) l",
   "category": "Complete",
   "exerciseid": "haskell/list/repli"
@@ -78,7 +78,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "palindrome :: Eq a => [a] -> Bool\npalindrome l = l == reverse l",
-  "typesig": "",
+  "typesig": "palindrome :: Eq a => [a] -> Bool",
   "input": "palindrome :: Eq a => [a] -> Bool\npalindrome l = l == reverse l",
   "category": "Complete",
   "exerciseid": "haskell/list/palindrome"
@@ -90,7 +90,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "mylength :: [a] -> Int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength xs",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "mylength :: [a] -> Int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength xs",
   "category": "Complete",
   "exerciseid": "haskell/list/mylength"
@@ -102,7 +102,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse :: [a] -> [a]\nmyreverse [] = []\nmyreverse (x:xs) = myreverse xs ++ [x]",
   "category": "Complete",
   "exerciseid": "haskell/list/myreverse"
@@ -114,7 +114,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "repli xs i = concatMap (replicate i) xs",
-  "typesig": "",
+  "typesig": "repli :: [a] -> Int -> [a]",
   "input": "repli xs i = concatMap (replicate i) xs",
   "category": "Complete",
   "exerciseid": "haskell/list/repli"
@@ -126,7 +126,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "mylength [] = 0\nmylength (x : xs) = 1 + mylength xs",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "mylength [] = 0\nmylength (x : xs) = 1 + mylength xs",
   "category": "Complete",
   "exerciseid": "haskell/list/mylength"
@@ -138,7 +138,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs)\n  | x == y    = compress(y:xs)\n  | otherwise = x : compress(y:xs) ",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs)\n  | x == y    = compress(y:xs)\n  | otherwise = x : compress(y:xs) ",
   "category": "Complete",
   "exerciseid": "haskell/list/compress"
@@ -150,7 +150,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs) =\n      if x == y then\n        compress (y:xs)\n      else\n        x : compress (y:xs)",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs) =\n      if x == y then\n        compress (y:xs)\n      else\n        x : compress (y:xs)",
   "category": "Complete",
   "exerciseid": "haskell/list/compress"
@@ -162,7 +162,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "\n\nrepli :: [a] -> Int -> [a]\nrepli [] _ = []\nrepli (x:xs) n = replicate n x ++ repli xs n",
-  "typesig": "",
+  "typesig": "repli :: [a] -> Int -> [a]",
   "input": "\n\nrepli :: [a] -> Int -> [a]\nrepli [] _ = []\nrepli (x:xs) n = replicate n x ++ repli xs n",
   "category": "Complete",
   "exerciseid": "haskell/list/repli"
@@ -174,7 +174,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "repli :: [a] -> Int -> [a]\nrepli xs i = concatMap(replicate i) xs",
-  "typesig": "",
+  "typesig": "repli :: [a] -> Int -> [a]",
   "input": "repli :: [a] -> Int -> [a]\nrepli xs i = concatMap(replicate i) xs",
   "category": "Complete",
   "exerciseid": "haskell/list/repli"
@@ -186,7 +186,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "myreverse :: [a] -> [a]\nmyreverse([]) = []\nmyreverse(x:xs) = myreverse(xs) ++ [x]",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse :: [a] -> [a]\nmyreverse([]) = []\nmyreverse(x:xs) = myreverse(xs) ++ [x]",
   "category": "Complete",
   "exerciseid": "haskell/list/myreverse"
@@ -198,7 +198,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "myreverse [] = []\nmyreverse (x:xs) = (myreverse xs) ++ [x]",
-  "typesig": "",
+  "typesig": "myreverse :: [a] -> [a]",
   "input": "myreverse [] = []\nmyreverse (x:xs) = (myreverse xs) ++ [x]",
   "category": "Complete",
   "exerciseid": "haskell/list/myreverse"
@@ -210,7 +210,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "mylength :: [a] -> int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength(xs)\n",
-  "typesig": "",
+  "typesig": "mylength :: [a] -> Int",
   "input": "mylength :: [a] -> int\nmylength [] = 0\nmylength (x:xs) = 1 + mylength(xs)\n",
   "category": "Complete",
   "exerciseid": "haskell/list/mylength"
@@ -222,7 +222,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x:x:(dupli xs)",
-  "typesig": "",
+  "typesig": "dupli :: [a] -> [a]",
   "input": "dupli :: [a] -> [a]\ndupli [] = []\ndupli (x:xs) = x:x:(dupli xs)",
   "category": "Complete",
   "exerciseid": "haskell/list/dupli"
@@ -234,7 +234,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs) | x == y = compress (x:xs)\n                  | otherwise = x : compress (y:xs)",
-  "typesig": "",
+  "typesig": "compress :: Eq a => [a] -> [a]",
   "input": "compress :: Eq a => [a] -> [a]\ncompress [] = []\ncompress [x] = [x]\ncompress (x:y:xs) | x == y = compress (x:xs)\n                  | otherwise = x : compress (y:xs)",
   "category": "Complete",
   "exerciseid": "haskell/list/compress"
@@ -246,7 +246,7 @@
   "solved_model": true,
   "feedback": "Correct.",
   "code": "repli :: [int] -> Int -> [int]\nrepli [] _ = []\nrepli (x:xs) n = replicate n x ++ repli xs n",
-  "typesig": "",
+  "typesig": "repli :: [a] -> Int -> [a]",
   "input": "repli :: [int] -> Int -> [int]\nrepli [] _ = []\nrepli (x:xs) n = replicate n x ++ repli xs n",
   "category": "Complete",
   "exerciseid": "haskell/list/repli"

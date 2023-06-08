@@ -6,10 +6,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# HLINT ignore "Use lambda-case" #-}
+{-# LANGUAGE PatternGuards #-}
 
 module Transform where
 
-import GHC (Name, Ghc, HscEnv, GhcMonad (..), getSessionDynFlags, isLocalId, SrcSpan)
+import GHC (Name, Ghc, HscEnv, GhcMonad (..), getSessionDynFlags, isLocalId, SrcSpan, isPrimOpId)
 import GHC.Core ( Expr(..), CoreExpr, CoreBndr, Bind(..), CoreProgram, Alt (..), valArgCount, CoreBind, AltCon (..))
 import GHC.Types.Name ( mkOccName, getOccString, mkInternalName, isDataConName, isSystemName, getSrcSpan)
 import qualified GHC.Types.Name.Occurrence as Occ
@@ -29,7 +30,7 @@ import GHC.Types.Var
       setVarType,
       mkGlobalVar,
       isLocalVar,
-      setVarType, isTyVarBinder, setIdNotExported, mkExportedLocalVar, globaliseId, setVarName )
+      setVarType, isTyVarBinder, setIdNotExported, mkExportedLocalVar, globaliseId, setVarName, isCoVar )
 import GHC.Core.TyCo.Rep (Type(..), Kind, CoercionR, TyLit (StrTyLit), AnonArgFlag (VisArg))
 import GHC.Data.FastString (fsLit, mkFastString)
 import GHC.Types.Unique
@@ -37,7 +38,7 @@ import GHC.Core.TyCon (TyCon, mkPrelTyConRepName)
 
 import GHC.Types.SrcLoc ( mkGeneralSrcSpan, srcLocSpan, GenLocated )
 import GHC.Types.Id.Info (IdDetails(VanillaId), vanillaIdInfo, pprIdDetails, setOccInfo, IdInfo, setArityInfo, arityInfo)
-import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc, floatBindings, FloatOutSwitches (..), uniqAway, MonadUnique (getUniqueSupplyM, getUniqueM), DynFlags (DynFlags), OccInfo (OneOcc), setNameLoc, extendInScopeList, runCoreM, freeVars, CoreExprWithFVs, DIdSet, FloatBind, wrapFloats, freeVarsOfAnn, freeVarsOf, localiseId, isConLikeId, isDataConId_maybe, UniqSupply, uniqFromSupply)
+import GHC.Plugins (IdEnv, getInScopeVars, showSDocUnsafe, Literal (LitString), mkDefaultCase, needsCaseBinding, mkLocalId, ModGuts (ModGuts, mg_binds), HscEnv (hsc_IC), InScopeSet, unsafeGetFreshLocalUnique, extendInScopeSet, mkInScopeSet, mkUniqSet, setIdExported, eltsUFM, getUniqSet, emptyInScopeSet, tryEtaReduce, isRuntimeVar, liftIO, manyDataConTy, multiplicityTy, splitForAllTyCoVar, showSDoc, floatBindings, FloatOutSwitches (..), uniqAway, MonadUnique (getUniqueSupplyM, getUniqueM), DynFlags (DynFlags), OccInfo (OneOcc), setNameLoc, extendInScopeList, runCoreM, freeVars, CoreExprWithFVs, DIdSet, FloatBind, wrapFloats, freeVarsOfAnn, freeVarsOf, localiseId, isConLikeId, isDataConId_maybe, UniqSupply, uniqFromSupply, isClassOpId, eqType)
 import GHC.Data.Maybe (fromJust, liftMaybeT)
 import GHC.Utils.Outputable (Outputable(ppr))
 import GHC.Iface.Ext.Types (pprIdentifier)
@@ -63,7 +64,7 @@ import GHC.Core.Lint (interactiveInScope)
 import GHC.Runtime.Context (extendInteractiveContextWithIds)
 
 
-import Utils 
+import Utils
 import Similar ( Similar((~=)), isCommutative )
 import Data.Type.Equality (apply)
 import qualified Data.Map as M
@@ -74,46 +75,55 @@ import GHC.Core.Opt.FloatOut ( floatOutwards )
 import GHC.Utils.Logger (initLogger)
 import GHC.Types.Unique.Supply (mkSplitUniqSupply, listSplitUniqSupply)
 import GHC.Core.Type ( Type, Var(..), isLinearType, isTyVar, dropForAlls )
-import GHC.Types.Id (setIdArity, setIdInfo, idDataCon, isDataConId_maybe)
+import GHC.Types.Id (setIdArity, setIdInfo, idDataCon, isDataConId_maybe, isFCallId, isDataConWorkId, isDataConWrapId, isDFunId, isJoinId, isImplicitId)
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 (pack)
 import GHC.Builtin.Uniques (mkBuiltinUnique)
 import Analyse (hasCase)
 import GHC.Types.Tickish (GenTickish(..))
+import Data.Bifunctor ( Bifunctor(second) )
 
-preProcess :: CoreProgram -> IO CoreProgram 
+preProcess :: CoreProgram -> IO CoreProgram
 -- | Preprocessing transformations
-preProcess p = removeModInfo p >>= replaceHoles >>= replacePatErrors 
+preProcess p = replaceHoles p >>= replacePatErrors
 
-normalise :: String -> CoreProgram -> IO (CoreProgram, Map Var Var) 
+normalise :: String -> CoreProgram -> IO (CoreProgram, Map Var Var)
 -- | Normalising transformations
-normalise name p = inlineBinds p >>=
-                   recToLetRec >>= 
-                   removeRedEqCheck >>= 
+normalise name p = inlineBinds name p >>=
+                   recToLetRec >>=
+                   removeRedEqCheck >>=
                    replaceCaseBinds >>=
-                   etaReduce >>= 
-                   alphaWCtxt name 
+                   etaReduce >>=
+                   alphaWCtxt name
+
+normalise' :: String -> CoreProgram -> IO CoreProgram
+normalise' n p = inlineBinds n p
+                >>= recToLetRec
+                >>= removeRedEqCheck
+                >>= replaceCaseBinds
+                >>= etaReduce 
+                >>= alpha n  
 
 removeModInfo :: CoreProgram -> IO CoreProgram
 -- | Remove module information
-removeModInfo p = return $ concatMap removeModInf p 
+removeModInfo p = return $ concatMap removeModInf p
     where removeModInf :: CoreBind -> [CoreBind]
           removeModInf (NonRec v e) | isVarMod v = []
           removeModInf b                         = [b]
 
 
-replaceHoles :: CoreProgram -> IO CoreProgram 
+replaceHoles :: CoreProgram -> IO CoreProgram
 -- | Replace holes (case typerror) with variables
 replaceHoles p = mkSplitUniqSupply 'H' >>= \us -> return (evalState (repHoles (listSplitUniqSupply us) p) 0)
-    where repHoles :: [UniqSupply] -> CoreProgram -> State Int CoreProgram  
+    where repHoles :: [UniqSupply] -> CoreProgram -> State Int CoreProgram
           repHoles us = transformBiM $ \case
             c@(Case e v t [])
                 | isHoleExpr c -> do
-                                holecount <- get 
+                                holecount <- get
                                 modify $ \s -> s+1
                                 let id = fromJust (getTypErr e)
-                                    ty = exprType c
-                                    uq = uniqFromSupply (us !! holecount) 
+                                    ty = exprType c -- might be another type  
+                                    uq = uniqFromSupply (us !! holecount)
                                     name = makeName ("hole" ++ show holecount) uq (getSrcSpan (varName v))
                                     id' = setIdInfo (setVarType (setVarName v name) ty) idinf
                                     idinf = setArityInfo vanillaIdInfo (exprArity e)
@@ -121,14 +131,14 @@ replaceHoles p = mkSplitUniqSupply 'H' >>= \us -> return (evalState (repHoles (l
                 | otherwise -> return c
             e -> return e
 
-replacePatErrors :: CoreProgram -> IO CoreProgram 
+replacePatErrors :: CoreProgram -> IO CoreProgram
 -- | Replace pattern errors (case patError) with variables
 replacePatErrors = return . repPatErr
-    where repPatErr :: CoreProgram -> CoreProgram  
+    where repPatErr :: CoreProgram -> CoreProgram
           repPatErr = transformBi $ \case
             c@(Case e v t []) -- we only replace paterrors with empty alternatives 
                 | isPatError c -> let id = fromJust (getPatErr e)
-                                      ty = exprType c
+                                      ty = exprType c -- check this type
                                       name = makeName "patError" (getUnique id) (getSrcSpan (varName v))
                                       id' = setIdInfo (setVarType (setVarName v name) ty) idinf
                                       idinf = setArityInfo vanillaIdInfo (exprArity e)
@@ -142,20 +152,13 @@ etaReduce = return . rewriteBi etaRed
     where etaRed :: CoreExpr ->  Maybe CoreExpr
           {- etaRed (Lam v e) = reduce v e 
           etaRed _         = Nothing  -}
-          etaRed (Lam v (Tick t (App f args)))         | isEtaReducible f args v = return (Tick t f)  
+          etaRed (Lam v (Tick t (App f args)))         | isEtaReducible f args v = return (Tick t f)
+          etaRed (Lam v (App (Tick t f) args))         | isEtaReducible f args v = return (Tick t f)
           etaRed (Lam v (App f args))                  | isEtaReducible f args v = return f
           etaRed (Lam v (Let b (Tick t (App f args)))) | isEtaReducible f args v = return (Let b (Tick t f))
           etaRed (Lam v (Let b (App f args)))          | isEtaReducible f args v = return (Let b f)
-          etaRed _ = Nothing 
+          etaRed _ = Nothing
 
-{- reduce :: Var -> CoreExpr -> Maybe CoreExpr 
-reduce v (Tick _ e)   = reduce v e 
-reduce v (Let b e)    = case reduce v e of 
-                            Just ex -> return (Let b ex)
-                            Nothing -> Nothing 
-reduce v (App f args) | isEtaReducible f args v = return f 
-reduce _ _ = Nothing  -}
-  
 
 isEtaReducible :: CoreExpr -> CoreExpr -> Var -> Bool
 isEtaReducible f arg v = case arg of
@@ -165,7 +168,7 @@ isEtaReducible f arg v = case arg of
               ,not (ins v f)     -- don't eta reduce if variable used somewhere else in the expression 
               ,not (isEvVar v)   -- don't remove evidence variables 
               -> True
-            Tick _ e -> isEtaReducible f e v 
+            Tick _ e -> isEtaReducible f e v
             _ -> False
 
 
@@ -177,7 +180,7 @@ data St = St {
         ,freshCaseBindVar  :: Int
         ,freshVar          :: Int
         ,freshBindVar      :: Int
-        ,freshLamVar       :: Int 
+        ,freshLamVar       :: Int
         ,exerName  :: String
         }
 
@@ -192,14 +195,15 @@ alphaWCtxt :: String -> CoreProgram -> IO (CoreProgram, Map.Map Var Var)
 alphaWCtxt fname cs = return (prog, env state)
     where (prog,state) = runState st (initSt {exerName = fname})
           st = mapM alphaR cs
-          alphaR cb = modify resetState >> alphaB cb 
+          alphaR cb = modify resetState >> alphaB cb
 
 alpha :: String -> CoreProgram -> IO CoreProgram
 -- | Do renaming and return map of renamed variables        
 alpha fname cs = return $ evalState st (initSt {exerName = fname})
-    where st = mapM alphaB cs
+    where st = mapM alphaR cs
+          alphaR cb = modify resetState >> alphaB cb
 
-resetState :: St -> St  
+resetState :: St -> St
 resetState st = st {topBindCount = topBindCount st + 1,
                     freshCaseBindVar = 0,
                     freshVar = 0,
@@ -207,9 +211,9 @@ resetState st = st {topBindCount = topBindCount st + 1,
 
 
 alphaB :: CoreBind -> Ctx CoreBind
-alphaB cb = do  
-    alpha cb 
-    where alpha = \case 
+alphaB cb = do
+    alpha cb
+    where alpha = \case
             (NonRec v e) -> do
                 v' <- renameVar TopBind v
                 NonRec v' <$> aRename e
@@ -219,18 +223,25 @@ alphaB cb = do
                 return $ Rec (zip vars exps)
 
 renameVar :: VarType -> Id -> Ctx Id
-renameVar vty v = do
+renameVar vty v | isSpecialVar = return v
+                | otherwise = do
             env <- gets env
             name <- gets exerName
-            case Map.lookup v env of
-                Just n  -> return n
-                Nothing -> checkNew v name
-    where checkNew v n | varNameUnique v == n -- dont rename main function
-                         || isGlobalId v      -- don't rename global ids (including holes, since we must keep track of that its a hole)
-                         || isTyVar v         -- don't rename type variables 
-                         || isTyCoVar v  
-                         || isEvVar v   = return v     -- don't rename evidence variables 
-                       | otherwise    = renameV vty v   -- otherwise, rename
+            if varNameUnique v == name 
+                then return v 
+                else case Map.lookup v env of
+                    Just n  | varType n `eqType` varType v -> return n
+                            | otherwise -> renameV vty v 
+                    Nothing -> renameV vty v 
+    where isSpecialVar = 
+                 isGlobalId v 
+              || isTyCoVar v 
+              || isSpecVar v 
+              || isImplicitId v
+              || isTcTyVar v
+              || isJoinId v 
+              || isEvVar v 
+              || isConLikeId v
 
 
 renameV :: VarType -> Var -> Ctx Var
@@ -241,10 +252,10 @@ renameV vty v = do
     return v'
 
 getVName :: VarType -> Ctx String
-getVName vty = do 
+getVName vty = do
     bc <- gets topBindCount
-    case vty of 
-        CaseBind -> do 
+    case vty of
+        CaseBind -> do
                 i <- gets freshCaseBindVar
                 modify $ \ s -> s {freshCaseBindVar = i+1}
                 return ("cb"++show bc ++ show i)
@@ -300,27 +311,29 @@ renameAlt = mapM renameAlt'
 
 
 
-inlineBinds :: CoreProgram -> IO CoreProgram
+inlineBinds :: String -> CoreProgram -> IO CoreProgram
 -- | Inline recursive binders as let-recs, and non recursive binders directly
-inlineBinds = return . inlineBind
-    where inlineBind :: CoreProgram -> CoreProgram
-          inlineBind [] = []
-          inlineBind (b:bs) = case b of
-            nr@(NonRec v e) -> if any (insB v) bs then 
-                                    let (newBinds, rest) = inline nr bs
-                                     in newBinds ++ inlineBind rest 
-                            else nr:inlineBind bs 
-            rr@(Rec ((v,e):ls)) -> if any (insB v) bs then 
-                                    let (newBinds, rest) = inline rr bs
-                                     in newBinds ++ inlineBind rest  
-                                else rr:inlineBind bs 
+inlineBinds exfun = return . inlineBind []
+    where inlineBind :: CoreProgram -> CoreProgram -> CoreProgram
+          inlineBind acc [] = acc 
+          inlineBind acc (b:bs) | not (isSpecVar v)
+                            , exfun /= getOccString v  
+                            , length usedBy == 1 
+                            , notTyCon $ head usedBy = 
+                                let (newBinds, rest) = inline b usedBy (acc ++ bs) 
+                                in inlineBind newBinds rest 
+                            | otherwise = inlineBind (b:acc) bs
+                where v = getBindTopVar b 
+                      usedBy = getBinds (acc ++ bs) b
+                      notTyCon b = not (isTyConApp . varType . getBindTopVar $ b)
+                       
+          
 
-inline :: CoreBind -> [CoreBind] -> ([CoreBind],[CoreBind])
+inline :: CoreBind -> [CoreBind] -> [CoreBind] -> ([CoreBind],[CoreBind])
 -- | Inline a binder and return remaining binders 
-inline b bs = let ls  = getBinds bs (getBindTopVar b) -- get all binders using the binder we want to inline 
-                  b'  = updateVar (makeLocal (getBindTopVar b)) b -- change scope to local of binder variable if inlined 
-                  bs' = insertBind b ls
-                  in (bs', delete b (bs \\ ls))
+inline b inlbs bs = let b'  = updateVar (makeLocal (getBindTopVar b)) b -- change scope to local of binder variable if inlined 
+                        bs' = insertBind b inlbs
+                    in (bs', delete b (bs \\ inlbs))
 
 insertBind :: CoreBind -> [CoreBind] -> [CoreBind]
 -- | Inline binder in all binders using it 
@@ -332,28 +345,30 @@ insertBind n@(NonRec v e) bs = map insertB bs -- inline another nonrec
           insertB bi@(Rec es) = (transformBi $ \case
             (Var v') | v == v' -> e
             e -> e) bi
-insertBind (Rec ((v,e):es)) bs = map insertR bs
+insertBind (Rec ls@((v,e):es)) bs = map insertR bs
     where insertR bind@(NonRec b (Lam x ex)) = NonRec b $ Lam x $
                                          Let (Rec ((uv,e'):es)) (subst uv v ex)
           insertR bind@(NonRec b ex) = NonRec b $
                                          Let (Rec ((uv,e'):es)) (subst uv v ex)
-          uv = setVarType (localiseId v) (varType v)
+          insertR bind@(Rec es') = Rec $ map (second (subst uv v)) (es'++ ls)
+          uv = localiseId v
           e' = subst uv v e
 
-recToLetRec :: CoreProgram -> IO CoreProgram 
+recToLetRec :: CoreProgram -> IO CoreProgram
 -- | Inline recursive binders as let-recs when appropriate
 recToLetRec p = mkSplitUniqSupply 'R' >>= \us -> return (evalState (recToLR (listSplitUniqSupply us) p) 0)
     where recToLR :: [UniqSupply] -> CoreProgram -> State Int CoreProgram
           recToLR _ [] = return []
           recToLR us (b:bs) = case b of
-            rr@(Rec ((v,e):ls)) -> do 
+            rr@(Rec ((v,e):ls)) -> do
                             i <- get
                             modify $ \s -> s+1 -- state counter for indexing a new unique 
                             let v' = fresh (us !! i) v
                                 e' = subst v' v e
+                                ls' = map (subst v' v . snd) ls
                                 b' = NonRec v (Let (Rec ((v',e'):ls)) (Var v'))
-                            recToLR us bs >>= \bs' -> return $ b':bs 
-            nr@(NonRec v e) -> recToLR us bs >>= \bs' -> return $ nr:bs 
+                            recToLR us bs >>= \bs' -> return $ b':bs
+            nr@(NonRec v e) -> recToLR us bs >>= \bs' -> return $ nr:bs'
 
 removeRedEqCheck :: CoreProgram -> IO CoreProgram
 -- | Remove redundant equality checks
@@ -410,9 +425,9 @@ replaceCaseBinds :: CoreProgram -> IO CoreProgram
 -- | Substitute back the scrutinee for case binded name in case expressions
 replaceCaseBinds = return . transformBi repBinds
     where repBinds :: CoreExpr -> CoreExpr
-          -- | replace case result binder with scrutinee 
+          -- | replace case result binder with scrutinee (if the case binder is "wild")
           --  e.g. Case xs of ys -> {(n:ns) -> f ys} =>  Case xs of ys -> {(n:ns) -> f xs}
-          repBinds (Case e b t as) = Case e b t (map (sub e b) as)
+          repBinds (Case e b t as) | isWild b = Case e b t (map (sub e b) as)
               where sub :: CoreExpr ->  Var -> Alt Var -> Alt Var
                     sub e v (Alt ac vars ex) = Alt ac vars (subE e v ex)
           repBinds e = e
@@ -420,7 +435,7 @@ replaceCaseBinds = return . transformBi repBinds
 
 removeTyEvidence :: CoreProgram -> CoreProgram
 -- | Remove types and type evidence from a Coreprogram
-removeTyEvidence = transformBi removeTy 
+removeTyEvidence = transformBi removeTy
 
     where removeTy = \case
             (Lam v e)        | isEvVar v || isTyVar v -> e
@@ -543,12 +558,12 @@ floatOut p = do
     liftIO $ floatOutwards logger floatSw df us p
 
 
-removeTicks :: CoreProgram -> CoreProgram 
-removeTicks = rewriteBi remTick 
-    where remTick :: CoreExpr -> Maybe CoreExpr 
-          remTick ex = case ex of 
-            (Tick _ e) -> Just e 
-            e -> Nothing 
+removeTicks :: CoreProgram -> CoreProgram
+removeTicks = rewriteBi remTick
+    where remTick :: CoreExpr -> Maybe CoreExpr
+          remTick ex = case ex of
+            (Tick _ e) -> Just e
+            e -> Nothing
 
 
 {- addDefaultCase :: CoreProgram -> Ghc CoreProgram
