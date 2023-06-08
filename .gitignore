@@ -26,3 +26,5 @@ cabal.project.local~
 #/ghc-as-lib/studentfiles/*
 *.py
 *.html 
+/old/*
+/splint/*
