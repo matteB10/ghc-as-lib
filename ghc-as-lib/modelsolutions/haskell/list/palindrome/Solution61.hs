@@ -1,7 +1,6 @@
 module Solution61 where
 
 palindrome :: Eq a => [a] -> Bool
-{-# DESC Use the @prelude function @reverse. #-}
 
 palindrome xs = xs == (reverse xs)
 

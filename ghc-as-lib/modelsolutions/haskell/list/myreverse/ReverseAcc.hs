@@ -1,7 +1,6 @@
 module ReverseAcc where
 
 myreverse :: [a] -> [a]
-{-# DESC Introduce a helper function that uses an accumulating parameter. #-}
 
 myreverse = reverse' []
   where

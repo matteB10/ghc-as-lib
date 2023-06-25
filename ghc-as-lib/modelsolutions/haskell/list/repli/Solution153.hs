@@ -1,7 +1,6 @@
 module Solution153 where
 
 repli :: [a] -> Int -> [a]
-{-# DESC Recurse over the natural number. #-}
 {-# ASS natural number > 0 #-}
 
 repli xs n = repli' xs n []

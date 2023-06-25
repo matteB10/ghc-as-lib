@@ -1,7 +1,6 @@
 module Solution163 where
 
 dropevery :: [a] -> Int -> [a]
-{-# DESC @tuple every listelement with 1 to n, and @filter away every n-th element. #-}
 
 {-# FC A solution without @pattern-matching is often preferred. #-}
 dropevery xs n = map fst $ filter ((n/=) . snd) $ zip xs (cycle [1..n])

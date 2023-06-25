@@ -1,7 +1,6 @@
 module Solution41 where
 
 mylength :: [a] -> Int
-{-# DESC Use explicit @recursion. #-}
 
 mylength []        =  0
 mylength (_:xs)    =

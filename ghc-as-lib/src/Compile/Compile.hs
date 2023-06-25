@@ -1,16 +1,6 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-} -- disable warnings from unrecognised pragma in model solution files 
-{-# OPTIONS_GHC -Wno-typed-holes #-}
-{-# OPTIONS_GHC -Wno-all #-}
-{-# HLINT ignore "Use camelCase" #-}
-{-# HLINT ignore "Redundant bracket" #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleInstances #-}
-
-
 module Compile.Compile where
 
--- | Main module for compiling to different compilation passes 
+-- | Main module for compiling programs to different compilation passes 
 
 import Prelude hiding (span)
 
@@ -86,10 +76,15 @@ import Data.Map ( Map )
 import qualified Data.Map as Map 
 import Utils.Utils 
 import Compile.Warning ( Warning, uniqWarns, writeWarnings ) 
-import Compile.Transform
+import Transform.Transform
 
 extFlags :: [Extension]
+-- | Extension flags to enable
 extFlags = [ExtendedDefaultRules] 
+
+unsetExtFlags :: [Extension]
+-- | Extension flags to disable
+unsetExtFlags = [MonomorphismRestriction]
 
 holeFlags :: [GeneralFlag]
 -- | General flags concerning typed holes 
@@ -146,23 +141,33 @@ setFlags :: Bool -> [GeneralFlag] -> Ghc ()
 -- | Set dynamic flags 
 setFlags b flags = do
    df <- getSessionDynFlags
-   let 
-       dflags = Prelude.foldl gopt_unset df unsetGenFlags
-       dflags1 = Prelude.foldl wopt_unset dflags unsetWarnFlags
-       dflags2 = Prelude.foldl wopt_set dflags1 setWarnFlags
-       gflags = if b then EnumSet.toList (generalFlags dflags2) ++ flags else flags
-       eflags = Data.List.delete MonomorphismRestriction (EnumSet.toList (extensionFlags dflags2) ++ extFlags) 
+   let gflags  = if b then EnumSet.toList (generalFlags df) ++ flags else flags
+       dflags = (opt_set gopt_unset unsetGenFlags
+              . opt_set wopt_unset unsetWarnFlags
+              . opt_set wopt_set setWarnFlags
+              . opt_set eopt_set extFlags
+              . opt_set eopt_unset unsetExtFlags
+              . opt_set gopt_set gflags) df 
 
-       dflags3 = dflags2 {refLevelHoleFits = Just 2,
-                          maxValidHoleFits = Just 8,
-                          maxRefHoleFits   = Just 10,
-                          generalFlags = EnumSet.fromList gflags,
-                         -- libraryPaths = ["/home/sauron/.ghc/x86_64-linux-9.2.5/environments"],
-                          extensionFlags = EnumSet.fromList eflags}
-   setSessionDynFlags dflags3 
+       {- to update DynFlags directly
+       dflags' = dflags {refLevelHoleFits = Just 2,
+                         maxValidHoleFits = Just 8,
+                         maxRefHoleFits   = Just 10}
+       -}
+          
+   setSessionDynFlags dflags
 
+opt_set :: (DynFlags -> a -> DynFlags) -> [a] -> DynFlags -> DynFlags
+opt_set f flags df = Prelude.foldl f df flags 
+
+eopt_unset :: DynFlags -> Extension -> DynFlags
+eopt_unset df ext = df {extensionFlags = EnumSet.delete ext (extensionFlags df)}
+
+eopt_set :: DynFlags -> Extension -> DynFlags
+eopt_set df ext = df {extensionFlags = EnumSet.insert ext (extensionFlags df)}
 
 data CompInfo = CompInfo {
+  -- compilation information used in feedback generation
     core     :: CoreProgram,
     parsed   :: ParsedSource,
     warns    :: [Warning],
@@ -172,14 +177,14 @@ data CompInfo = CompInfo {
 
 loadWithPlugins :: GhcMonad m => DynFlags -> Target -> [StaticPlugin] -> m SuccessFlag
 -- | Load ghc with a list of plugins
-loadWithPlugins dflags t the_plugins = do
+loadWithPlugins dflags t plugins = do
       -- first unload (like GHCi :load does)
       GHC.setTargets []
       _ <- GHC.load LoadAllTargets
       setTargets [t]
       modifySession $ \hsc_env ->
         let old_plugins = hsc_static_plugins hsc_env
-        in hsc_env { hsc_static_plugins = old_plugins ++ the_plugins}
+        in hsc_env { hsc_static_plugins = old_plugins ++ plugins} -- set new plugins
       setSessionDynFlags dflags { outputFile_ = Nothing }
       load LoadAllTargets
 
@@ -270,7 +275,7 @@ compSimpl :: ExerciseName -> FilePath -> IO CompInfo
 compSimpl name fp = runGhc (Just libdir) $ do
   (prog,psrc,ref) <- toSimplify fp
   ws <- liftIO $ readIORef ref  
-  (p',vars) <- liftIO $ alphaWCtxt name prog -- =<< replacePatErrors prog 
+  (p',vars) <- liftIO $ alpha name prog -- =<< replacePatErrors prog 
   return $ CompInfo prog psrc (nubBy uniqWarns ws) Map.empty name 
 
 compDes :: ExerciseName -> FilePath -> IO CompInfo
@@ -278,7 +283,7 @@ compDes :: ExerciseName -> FilePath -> IO CompInfo
 compDes name fp = runGhc (Just libdir) $ do
   (prog,psrc,ref) <- toDesugar fp 
   ws <- liftIO $ readIORef ref
-  (p',vars) <- liftIO $ alphaWCtxt name prog 
+  (p',vars) <- liftIO $ alpha name prog 
   return $ CompInfo p' psrc (nubBy uniqWarns ws) Map.empty name 
 
 
@@ -286,6 +291,7 @@ compDes name fp = runGhc (Just libdir) $ do
 type CompileFun = ExerciseName -> FilePath -> IO CompInfo
 
 compString :: String -> ExerciseName -> CompileFun -> IO CompInfo
+-- compile a program given as a string
 compString input exercise f = do 
   rules <- readFile "Rules.hs"
   let inputstr = "module Temp where\n" `nl` input `nl` rules
@@ -301,27 +307,10 @@ compTestNorm :: ExerciseName -> FilePath -> IO (CoreProgram,HscEnv)
 compTestNorm n fp = runGhc (Just libdir) $ do
   initEnv True (holeFlags ++ genFlags ++ simplFlags) fp 
   c <- liftIO (compSimpl n fp)
-  (prog) <- liftIO $ normalise' n (core c) 
+  (prog,_) <- liftIO $ normalise n (core c) 
   env <- getSession 
   return (prog,env)
 
-compTestR :: ExerciseName -> FilePath -> IO (CoreProgram,HscEnv)
--- | Compile with given function, return normalised program and environment
-compTestR n fp = runGhc (Just libdir) $ do
-  initEnv True (holeFlags ++ genFlags ++ simplFlags) fp 
-  c <- liftIO (compSimpl n fp)
-  (prog) <- liftIO $ normalise' n (core c) >>= alpha n 
-  env <- getSession 
-  return (prog,env)
-
-compTest :: ExerciseName -> FilePath -> IO (CoreProgram,HscEnv)
--- | Compile with given function, return normalised program and environment
-compTest n fp = runGhc (Just libdir) $ do
-  initEnv True (holeFlags ++ genFlags ++ simplFlags) fp 
-  c <- liftIO (compSimpl n fp)
-  --(prog) <- liftIO $ normalise' n (core c) 
-  env <- getSession 
-  return (core c,env)
 
 typeCheckCore :: CoreProgram -> HscEnv -> IO ()
 -- | Use Core Linter to check for problems

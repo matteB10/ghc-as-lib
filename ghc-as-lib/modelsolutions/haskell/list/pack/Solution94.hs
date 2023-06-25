@@ -1,7 +1,6 @@
 module Solution94 where
 
 pack :: Eq a => [a] -> [[a]]
-{-# DESC Use the @prelude function @foldr. #-}
 
 pack = foldr func []
     where func x []     = [[x]]

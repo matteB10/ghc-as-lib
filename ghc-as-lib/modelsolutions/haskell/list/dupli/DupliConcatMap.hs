@@ -1,11 +1,10 @@
 module DupliConcatMap where
 
 dupli :: [a] -> [a]
-{-# DESC Use the @prelude function @concatMap. #-}
 {-# ETADECL 1 #-}
 
 dupli = {-# F @concatMap first maps a function over a @list and then concatenates the result. 
-        #-} concatMap {-# ETA 1 #-} (replicate 2) 
+        #-} concatMap {-# ETA 1 #-} (replicate 2)
 
 {-# RULES "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs #-}
 {-# RULES "$/app"   forall a. forall (f :: a -> a) (g :: a -> a) (x :: a).  f $ g x = f (g x) #-}

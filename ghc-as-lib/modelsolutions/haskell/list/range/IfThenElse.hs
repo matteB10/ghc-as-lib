@@ -1,7 +1,6 @@
 module IfThenElse where
 
 range :: Int -> Int -> [Int]
-{-# DESC Implement range using if then else and recursion  #-}
 
 range x y = if x==y then [x] else x:range (x+1) y
 

@@ -1,7 +1,6 @@
 module Identity4 where
 
 identity :: Num a => a -> b
-{-# DESC Use the @prelude functions @map and @replicate #-}
 
 identity n = map rowOf [1..n]
     where rowOf i = replicate (i-1) 0 ++ [1] ++ replicate (n-i) 0

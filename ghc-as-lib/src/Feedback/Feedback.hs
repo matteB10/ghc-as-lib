@@ -81,7 +81,7 @@ mkFeedback s ms | isSimilarTo (~=) s ms             = Complete warnfb -- add HLi
                 | otherwise                         = Unknown $ bcfb ++ typefb ++ warnfb
     where m = getClosest s ms
           warnfb = mkWarnFeedback (warns s) (warns m)
-          holefb = mkHoleFeedback' s m
+          holefb = mkHoleFeedback s m
           typefb = mkTypSigFeedback s m
           bcfb   = mkMissingBCFeedback s
 
@@ -116,7 +116,7 @@ mkTypSigFeedback s m | hasTypSig ex ps
                      | otherwise = [] -- if lacks signature we will probably run into other type errors 
               where ps = parsed s
                     pm = parsed m
-                    ex = exercise s
+                    ex = exercise s 
 
 mkMissingBCFeedback :: CompInfo -> [Suggestion]
 mkMissingBCFeedback s = case missingBaseCase (core s) of
@@ -134,17 +134,8 @@ isSimilarTo :: (CoreProgram -> CoreProgram -> Bool) -> CompInfo -> [CompInfo] ->
 isSimilarTo f student models = any ((core student `f`) . core) models
 
 
-{- mkHoleFeedback :: CompInfo -> CompInfo -> [Suggestion]
--- | Make hole match feedback 
-mkHoleFeedback sp mp = map (HoleMatches . mkMsg) holematch_expr
-  where
-        holematch_expr    = filter ((""/=) . fst) (printHoleMatch sp mp) -- from model solution
-        mkMsg (ex,[])     = ex
-        mkMsg (ex,locals) = ex ++ " where\n\t" ++ intercalate "\n" locals -}
-
-
-mkHoleFeedback' :: CompInfo -> CompInfo -> [Suggestion]
-mkHoleFeedback' s m = case getMatchLocs (core s) (core m) of
+mkHoleFeedback :: CompInfo -> CompInfo -> [Suggestion]
+mkHoleFeedback s m = case getMatchLocs (core s) (core m) of
         [] -> []
         xs -> [HoleMatches (mkSugg xs)]
     where vars = translateNames (names s) (names m)
@@ -163,8 +154,8 @@ mkMatches ps@(L l hsm) vars rss = case getHsExprFromLoc rss ps of -- if we find 
                     f  -> LocalFun NoMatch $ map (Exp . showTransExp vars) f
 
 isLocFun :: LHsExpr GhcPs -> ParsedSource -> Bool
+-- | Check if a parsed expression is a local declaration
 isLocFun e ps = not (null (getLocalDeclarations ps [e]))
-
 
 
 printHoleMatch :: CompInfo -> CompInfo -> [(String,[String])]
@@ -200,7 +191,7 @@ hasUnmatchedModelWarns :: CompInfo -> [CompInfo] -> Bool
 hasUnmatchedModelWarns s m = any (\x -> reason x /= NoReason) (warns closest_model \\ warns s)
   where closest_model = getClosest s m
 
--- Utility functions for feedback 
+-- Utility functions for classifying feedback 
 
 isMatch :: Feedback -> Bool
 isMatch = \case

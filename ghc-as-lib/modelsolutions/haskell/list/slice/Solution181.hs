@@ -1,7 +1,6 @@
 module Solution181 where
 
 slice :: [a] -> Int -> Int -> [a]
-{-# DESC Use the @prelude functions @take and @drop. #-}
 
 slice xs i k = take (k-i+1) $ drop (i-1) xs
 

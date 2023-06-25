@@ -1,7 +1,6 @@
 module Solution185 where
 
 slice :: [a] -> Int -> Int -> [a]
-{-# DESC @tuple each @list element with an integer denoting its position, and then @filter away the elements outside the range. #-}
 
 slice xs i j = map snd
              $ filter (\(x,_) -> x >= i && x <= j)

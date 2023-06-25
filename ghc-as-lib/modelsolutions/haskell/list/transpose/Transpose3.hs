@@ -1,7 +1,6 @@
 module Transpose3 where
 
 transpose :: [a] -> [a]
-{-# DESC Travel the number of columns and fetch the right cells #-}
 
 transpose rs = cols 0
  where

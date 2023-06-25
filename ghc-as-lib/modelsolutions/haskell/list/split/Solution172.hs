@@ -1,7 +1,6 @@
 module Solution172 where
 
 split :: [a] -> Int -> ([a], [a])
-{-# DESC Use the @prelude functions @flip and @splitAt. #-}
 
 split = flip splitAt
 

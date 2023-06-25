@@ -1,7 +1,6 @@
 module Solution85 where
 
 compress :: Eq a => [a] -> [a]
-{-# DESC @pattern-match on the empty @list, a singleton list, and lists with at least two elements. #-}
 
 compress []        =  []
 compress [x]       =  [x]

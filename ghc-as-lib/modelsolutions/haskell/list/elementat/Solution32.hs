@@ -1,7 +1,6 @@
 module Solution32 where
 
 elementat :: [a] -> Int -> a
-{-# DESC Recurse over the @list and the integer. #-}
 
 elementat (x:_) 1  = x
 elementat (_:xs) k = elementat xs (k - 1)

@@ -1,7 +1,6 @@
 module AllPairsConcatMapZip where
 
 allpairs :: [a] -> [(a,a)]
-{-# DESC Use @zip and @repeat inside @concatMap #-}
 
 allpairs xs = concatMap {-# ETA 1 #-} (zip xs . repeat) xs
 

@@ -12,7 +12,7 @@ import GHC (HscEnv, ParsedSource)
 import GHC.Utils.Outputable
 
 import Compile.Compile
-import Compile.Transform
+import Transform.Transform
 import Instances.Similar
 import Instances.Diff ((~~))
 import Utils.Utils

@@ -1,7 +1,6 @@
 module Solution15 where
 
 mylast :: [a] -> a
-{-# Take the right element using @length #-}
 
 mylast xs = xs !! (length xs - 1)
 

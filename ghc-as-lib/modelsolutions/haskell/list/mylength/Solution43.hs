@@ -1,7 +1,6 @@
 module Solution43 where
 
 mylength :: [a] -> Int
-{-# DESC Use the prelude function @foldr and point-free style. #-}
 mylength =
   {-# F A lot of Haskell programmers prefer to work in
         point-free style. Point-free style means avoiding

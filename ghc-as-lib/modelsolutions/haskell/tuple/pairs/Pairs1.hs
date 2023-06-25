@@ -1,7 +1,6 @@
 module Pairs1 where
 
 pairs :: [a] -> [(a,a)]
-{-# DESC Use @map and explicit @recursion #-}
 
 pairs [] = []
 pairs (x:xs) = map (\y -> (x,y)) (x:xs) ++ pairs xs

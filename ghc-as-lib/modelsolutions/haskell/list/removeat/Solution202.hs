@@ -1,7 +1,6 @@
 module Solution202 where
 
 removeat :: Int -> [a] -> (Maybe a, [a])
-{-# DESC Recurse over the list. #-}
 
 removeat n [] = (Nothing,[]) 
 removeat n (x:xs) = if n==1 then (Just x,xs) else let (ma,rs) = removeat (n-1) xs in (ma,x:rs)

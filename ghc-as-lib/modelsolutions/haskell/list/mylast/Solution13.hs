@@ -1,7 +1,6 @@
 module Solution13 where
 
 mylast :: [a] -> a
-{-# DESC Take the @head of the @reverse list. #-}
 
 {-# FC @point-free #-}
 mylast = head . reverse

@@ -1,7 +1,6 @@
 module Solution164 where
 
 dropevery :: [a] -> Int -> [a]
-{-# DESC Use @foldl to accumulate both the result and the index of the element to be removed. #-}
 
 dropevery xs n = snd $ foldl (\acc e -> if fst acc > 1 then (fst acc - 1, snd acc ++ [e]) else (n, snd acc)) (n, []) xs
 {-# RULES "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs #-}

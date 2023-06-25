@@ -12,3 +12,4 @@ sinfun = Prelude.sin
 cosfun = Prelude.cos 
 
 funs = Funs {sin' = sinfun, cos' = cosfun}
+

@@ -1,7 +1,6 @@
 module Recursion where
 
 range :: Int -> Int -> [Int]
-{-# DESC Implement range using direct @recursion #-}
 
 {-# FC 
   Using direct @recursion means we have to explicitly look at the arguments and decide what to do. Because

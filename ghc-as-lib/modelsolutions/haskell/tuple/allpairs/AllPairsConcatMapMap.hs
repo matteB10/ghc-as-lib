@@ -1,7 +1,6 @@
 module AllPairsConcatMapMap where
 
 allpairs :: [a] -> [(a,a)]
-{-# DESC Use @map inside @concatMap #-}
 
 allpairs xs = concatMap pair xs
   where 

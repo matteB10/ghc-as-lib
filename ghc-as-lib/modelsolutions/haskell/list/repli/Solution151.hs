@@ -1,7 +1,6 @@
 module Solution151 where
 
 repli :: [a] -> Int -> [a]
-{-# DESC Use the prelude functions @concatMap and @replicate. #-}
 
 {-# FC This approach makes clever use of the functions already defined in the prelude,
        which is in general good coding practice. @hoogle can be used to discover already

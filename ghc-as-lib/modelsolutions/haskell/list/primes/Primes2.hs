@@ -1,7 +1,6 @@
 module Primes2 where
 
 primes :: [Int]
-{-# DESC Implement @eratosthenes-sieve by using @iterate and @filter from @prelude #-}
 
 primes = (map head (iterate multiples [2..]))
     where 

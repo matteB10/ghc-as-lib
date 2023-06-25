@@ -1,7 +1,7 @@
 module Myuncurry where
 
 myuncurry :: (a -> b -> c) -> (a, b) -> c
-{-# DESC Apply @pattern-matching on the tuple argument of the result-function #-}
+
 {-# FC When looking at the function description we speak of the function as if only having 1 parameter, however the result function has an argument itself which we can also use for pattern matching. We can easily see this when looking at the type signature of the function. A simple yet effective technique #-}
 
 myuncurry f (x,y) = f x y

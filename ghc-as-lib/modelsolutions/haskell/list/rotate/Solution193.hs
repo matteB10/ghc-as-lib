@@ -1,7 +1,6 @@
 module Solution193 where
 
 rotate :: [a] -> Int -> [a]
-{-# DESC Use the @prelude function @splitAt and @guards. #-}
 
 rotate xs n
     | n < 0 = rotate xs (n+len)

@@ -1,7 +1,6 @@
 module Solution201 where
 
 removeat :: Int -> [a] -> (Maybe a, [a])
-{-# DESC Use the @prelude function @splitAt. #-}
 
 removeat k xs = 
    let (front, back) = splitAt (k-1) xs 

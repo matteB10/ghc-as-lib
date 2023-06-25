@@ -1,7 +1,6 @@
 module Solution161 where
 
 dropevery :: [a] -> Int -> [a]
-{-# DESC Recurse over both the @list and the integer argument. #-}
 
 {-# FC We need a helper function to do the actual calculation, we can not give a 
        directly @recursive definition. The helper function can be used to `remember' the value of n

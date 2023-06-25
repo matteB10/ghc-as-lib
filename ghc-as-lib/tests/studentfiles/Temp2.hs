@@ -7,8 +7,7 @@ import Prelude hiding (length)
 --fromBin :: (Foldable f, Num a) => f a -> a
 --fromBin = foldl (\ n b -> 2*n + b) 0 
  
-fromBin = foldl op 0 
-    where op n b = 2*n + b 
+pack [] = []
 
 {- isZero :: (Eq t, Num t) => t -> Bool 
 isZero x = not (x /= 0) -}

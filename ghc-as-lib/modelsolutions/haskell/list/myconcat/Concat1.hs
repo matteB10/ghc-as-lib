@@ -1,7 +1,6 @@
 module Concat1 where
 
 myconcat :: [[a]] -> [a]
-{-# DESC Use the @higher-order function @foldr. #-}
 
 myconcat = foldr (++) []
 

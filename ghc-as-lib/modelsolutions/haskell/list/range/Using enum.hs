@@ -1,7 +1,6 @@
 module Using enum where
 
 range :: Int -> Int -> [Int]
-{-# DESC Implement range using the @prelude function @enumFromTo #-}
 
 {-# FC This exercise is trivial when using function @enumFromTo from the @prelude. #-}
 range = enumFromTo

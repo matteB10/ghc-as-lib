@@ -1,7 +1,6 @@
 module Foldl where
 
 fromBin :: [Int] -> Int
-{-# DESC Implement fromBin using the @foldl @prelude function. #-}
 {-# ETADECL 1 #-}
 
 fromBin = 

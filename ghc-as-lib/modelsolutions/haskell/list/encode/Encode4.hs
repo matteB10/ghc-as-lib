@@ -1,7 +1,6 @@
 module Encode4 where
 
 encode :: Eq a => [a] -> [(Int, a)]
-{-# DESC Use the @prelude function @span #-}
 
 encode []     = []
 encode (x:xs) = (n, x) : encode rest

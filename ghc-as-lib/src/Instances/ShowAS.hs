@@ -59,8 +59,6 @@ import Data.Void (Void)
 import Data.Generics.Uniplate.Data ( Biplate )
 -- ===============
 
--- Look at GHC.Unit.State 
-
 deriving instance Show HoleFitPlugin
 deriving instance Show Hole
 deriving instance Show HoleSort

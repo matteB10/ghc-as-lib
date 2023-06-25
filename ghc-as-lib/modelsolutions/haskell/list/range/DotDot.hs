@@ -1,7 +1,6 @@
 module DotDot where
 
 range :: Int -> Int -> [Int]
-{-# DESC Implement range using the @range-notation #-}
 
 range a b = [a .. b]
 

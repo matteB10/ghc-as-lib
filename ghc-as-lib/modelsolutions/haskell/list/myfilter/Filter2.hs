@@ -1,7 +1,6 @@
 module Filter2 where
 
 myfilter :: (a -> Bool) -> [a] -> [a]
-{-# DESC Use explicit @recursion  #-}
 
 myfilter _ []     = []
 myfilter p (x:xs) = if p x then x : myfilter p xs else myfilter p xs

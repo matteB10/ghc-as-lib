@@ -79,6 +79,7 @@ instance Similar (Expr Var) where
     (Let b e)    ~> (Let b' e')             = b  ~> b' && e ~> e'
     e            ~> (Let (Rec es) ine)      = any ((e ~>) . snd) es 
     (Coercion c) ~> (Coercion c')           = c  ~> c'
+    (Tick _ e)   ~> (Tick _ e')             = e ~> e' 
     (Tick _ e)   ~> e'                      = e ~> e' 
     e            ~> (Tick _ e')             = e ~> e' 
     x ~> y                                  = isHoleVarExpr x || isHoleExpr x 

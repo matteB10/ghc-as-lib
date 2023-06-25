@@ -1,7 +1,6 @@
 module Encode1 where
 
 encode :: Eq a => [a] -> [(Int, a)]
-{-# DESC Use the @prelude function @takeWhile, and @recursion #-}
 
 encode [] = []
 encode (x:xs) = (n+1, x) : encode (drop n xs)

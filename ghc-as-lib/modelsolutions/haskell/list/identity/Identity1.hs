@@ -1,7 +1,6 @@
 module Identity1 where
 
 identity :: Num a => a -> b
-{-# DESC Use the @prelude functions @map, @iterate, @take and @repeat #-}
 
 identity n = map (take n) (take n (iterate (0:) (1 : repeat 0)))
 

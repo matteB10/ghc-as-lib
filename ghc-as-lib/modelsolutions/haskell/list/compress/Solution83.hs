@@ -1,7 +1,6 @@
 module Solution83 where
 
 compress :: Eq a => [a] -> [a]
-{-# DESC Drop elements that are equal to the first using @dropWhile, and recurse. #-}
 
 {-# FC  A function which drops elements from a @list can be found in the @prelude. #-}
 

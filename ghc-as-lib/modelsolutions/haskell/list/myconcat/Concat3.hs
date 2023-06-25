@@ -1,7 +1,6 @@
 module Concat3 where
 
 myconcat :: [[a]] -> [a]
-{-# DESC Use explicit @recursion. #-}
 
 {- deze oplossing zou met een standaardstrategie voor foldr en ++ moeten worden herkend
 myconcat []       = []

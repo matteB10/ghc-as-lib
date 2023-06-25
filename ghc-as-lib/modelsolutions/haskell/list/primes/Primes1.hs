@@ -1,7 +1,6 @@
 module Primes1 where
 
 primes :: [Int]
-{-# DESC Use @prelude @filter and @rem and define a helper function `isPrime' #-}
 
 primes = filter isPrime [1..]
     where   isPrime x = filter (isDivisorOf x) [1..x] == [1,x]

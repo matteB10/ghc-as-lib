@@ -1,7 +1,6 @@
 module ReverseRec where
 
 myreverse :: [a] -> [a]
-{-# DESC Use explicit @recursion. #-}
 
 myreverse [] = []
 {-# FC @append can be used to put an item at the end of a list. #-}

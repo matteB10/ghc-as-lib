@@ -1,7 +1,6 @@
 module Solution81 where
 
 compress :: Eq a => [a] -> [a]
-{-# DESC Compare the first two elements of the list, and recurse. #-}
 
 compress (x : y : xs) =
     {-# F An if expression can used as any normal expression in Haskell. Where in other

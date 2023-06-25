@@ -20,3 +20,10 @@ eval (BinOp Add i j) x  = (eval i x) + (eval j x)
 eval (BinOp Mul i j) x  = (eval i x) * (eval j x)
 eval (MonoOp Cos i) x   = cos (eval i x)
 eval (MonoOp Sin i) x   = sin (eval i x)
+
+class Addable a where 
+  (+++) :: a -> a -> a  
+
+instance Addable Expr where 
+  (Num n) +++ (Num m) = Num (n + m)
+  x +++ y             = BinOp Add x y  

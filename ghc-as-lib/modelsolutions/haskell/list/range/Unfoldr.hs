@@ -1,7 +1,6 @@
 module Unfoldr where
 
 range :: Int -> Int -> [Int]
-{-# DESC Implement range using @unfoldr #-}
 
 range l u = unfoldr f l
   where f x | x == u + 1 = Nothing

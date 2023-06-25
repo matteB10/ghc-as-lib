@@ -1,7 +1,6 @@
 module Primes3 where
 
 primes :: [Int]
-{-# DESC Implement @eratosthenes-sieve by using explicit recursion and @filter #-}
 
 primes = sieve [2 .. ]
   where sieve (p:xs) = p : sieve (filter (\x -> mod x p /= 0) xs)

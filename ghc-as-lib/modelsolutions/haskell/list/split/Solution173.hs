@@ -1,7 +1,6 @@
 module Solution173 where
 
 split :: [a] -> Int -> ([a], [a])
-{-# DESC Recurse over both the @list and the integer. #-}
 
 split [] _ = ([], [])
 split xs 0 = ([], xs)

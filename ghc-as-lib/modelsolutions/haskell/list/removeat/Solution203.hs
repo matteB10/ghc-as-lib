@@ -1,7 +1,6 @@
 module Solution203 where
 
 removeat :: Int -> [a] -> (Maybe a, [a])
-{-# DESC Use the @prelude functions @take and @drop. #-}
 
 removeat n xs 
    | n <= length xs = (Just (xs !! (n-1)), take (n-1) xs ++ drop n xs)

@@ -1,7 +1,6 @@
 module Solution93 where
 
 pack :: Eq a => [a] -> [[a]]
-{-# DESC Use explicit @recursion and the @prelude functions @takeWhile and @dropWhile. #-}
 
 pack [] = []
 pack (x:xs) = (x : takeWhile (==x) xs) : pack (dropWhile (==x) xs)

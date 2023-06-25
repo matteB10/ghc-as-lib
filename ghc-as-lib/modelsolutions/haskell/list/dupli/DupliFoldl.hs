@@ -1,7 +1,6 @@
 module DupliFoldl where
 
 dupli :: [a] -> [a]
-{-# DESC Use the @prelude function @foldl. #-}
 {-# ETADECL 1 #-}
 
 {-# FC It is often considered good coding practice to use the recursion combinators @foldr or @foldl. #-}

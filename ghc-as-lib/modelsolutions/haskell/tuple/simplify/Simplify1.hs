@@ -1,7 +1,6 @@
 module Simplify1 where
 
 simplify :: (Int, Int) -> (Int, Int)
-{-# DESC Use the @prelude functions: @gcd, @signum, @abs and @div #-}
 
 simplify (n, d) = ((signum d * n) `div` g, abs d `div` g)
     where   g = gcd n d

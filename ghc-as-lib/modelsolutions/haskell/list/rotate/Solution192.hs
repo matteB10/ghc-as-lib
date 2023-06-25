@@ -1,7 +1,6 @@
 module Solution192 where
 
 rotate :: [a] -> Int -> [a]
-{-# DESC Use the @prelude functions @take and @drop. #-}
 
 rotate xs n = drop i xs ++ take i xs
     where i = n `mod` (length xs) 

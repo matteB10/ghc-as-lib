@@ -1,7 +1,6 @@
 module Solution95 where
 
 pack :: Eq a => [a] -> [[a]]
-{-# DESC Use explicit @recursion with @guards #-}
 
 pack []  = []
 pack [x] = [[x]]

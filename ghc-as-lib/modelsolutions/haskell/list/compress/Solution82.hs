@@ -1,7 +1,6 @@
 module Solution82 where
 
 compress :: Eq a => [a] -> [a]
-{-# DESC Use the @prelude function @foldr. #-}
 
 compress = foldr skipDups []
     where skipDups x [] = [x]

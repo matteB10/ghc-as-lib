@@ -1,7 +1,6 @@
 module ReverseFoldl where
 
 myreverse :: [a] -> [a]
-{-# DESC Use the @prelude function @foldl. #-}
 
 
 myreverse = 

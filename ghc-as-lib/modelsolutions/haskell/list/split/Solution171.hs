@@ -1,7 +1,6 @@
 module Solution171 where
 
 split :: [a] -> Int -> ([a], [a])
-{-# DESC Use the @prelude functions @take and @drop. #-}
 
 split xs n = (take n xs, drop n xs)
 

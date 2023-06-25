@@ -1,8 +1,6 @@
 module DupliExpRec1 where
 
-
 dupli :: [a] -> [a]
-{-# DESC Use explicit @recursion (1st variant). #-}
 
 {-# FC 
   Doing explicit recursion means we have to explicitly @pattern-match on the argument

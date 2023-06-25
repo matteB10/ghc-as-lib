@@ -1,7 +1,6 @@
 module Identity2 where
 
 identity :: Num a => a -> b
-{-# DESC Implement identity using the @unfoldr prelude function #-}
 
 {-# FC Define the identity function using @unfoldr. Use @unfoldr to create a row 
        with a one at the right place, by using the row number as the seed.

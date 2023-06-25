@@ -1,7 +1,6 @@
 module Solution162 where
 
 dropevery :: [a] -> Int -> [a]
-{-# DESC Use the @prelude functions @take and @drop. #-}
 
 dropevery [] _ = []
 dropevery list count = (take (count-1) list) ++ dropevery (drop count list) count

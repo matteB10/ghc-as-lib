@@ -1,7 +1,6 @@
 module Acc where
 
 fromBin :: [Int] -> Int
-{-# DESC Implement fromBin using an accumulating parameter. #-}
 
 fromBin bs = fromBin' (length bs - 1) bs
   where

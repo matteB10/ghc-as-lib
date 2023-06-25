@@ -1,7 +1,6 @@
 module Solution154 where
 
 repli :: [a] -> Int -> [a]
-{-# Use explicit recursion #-}
 
 repli [] _ = []
 repli (x:xs) i = replicate i x ++ repli xs i

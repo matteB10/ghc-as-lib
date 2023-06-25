@@ -1,7 +1,6 @@
 module Solution152 where
 
 repli :: [a] -> Int -> [a]
-{-# DESC Use the @prelude function @foldl. #-}
 
 repli xs n = foldl (\acc e -> acc ++ replicate n e) [] xs
 {-# FC foldl is @tail-recursive #-}

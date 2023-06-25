@@ -1,7 +1,6 @@
 module Solution12 where
 
 mylast :: [a] -> a
-{-# DESC Use the @prelude function @foldr1, @const and @id. #-}
 
 mylast = foldr1 (const id)
 

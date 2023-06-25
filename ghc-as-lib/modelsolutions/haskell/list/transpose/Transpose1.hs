@@ -1,7 +1,6 @@
 module Transpose1 where
 
 transpose :: [a] -> [a]
-{-# DESC Use explicit @recursion and @zipWith #-}
 
 transpose [r]    = map (:[]) r
 transpose (r:rs) = zipWith (:) r (transpose rs)

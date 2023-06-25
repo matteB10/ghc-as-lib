@@ -1,7 +1,6 @@
 module Dots where
 
 range :: Int -> Int -> [Int]
-{-# DESC Implement range using the @prelude function @take and list constructor function [x..]  #-}
 
 range x y = take (y+1-x) [x..]
 

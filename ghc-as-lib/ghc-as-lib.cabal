@@ -17,59 +17,61 @@ version:            0.1.0.0
 -- author: Matilda B
 
 extra-source-files: CHANGELOG.md
-
-executable test 
-  main-is: BenchMark.hs
-  build-depends: criterion
-                ,base >=4.16
-                ,ghc-paths 
-                ,ghc >=9.2.5 && < 9.3
-                ,ghc-boot
-                ,ghc-prim
-                ,ghc-exactprint
-                ,filepath 
-                ,containers
-                ,transformers
-                ,QuickCheck
-                ,uniplate
-                ,exceptions
-                ,text 
-                ,lens 
-                ,directory
-                ,random
-                ,comonad 
-                ,data-default
-                ,optparse-applicative
-                ,template-haskell 
-                ,utility-ht
-                ,aeson
-                ,temporary
-                ,bytestring
-                ,splint 
-                ,parsec
-                ,text-replace
-
-  other-modules: Similar 
-                ,Instance 
-                ,Transform 
-                ,Utils
-                ,Test 
-                ,CompileHs
-                ,Parsers
-                ,HoleMatches
-                ,Print
-                ,Analyse
-                ,Diff
-                ,HoleMatches
-                ,Instance
-                ,Feedback
-                ,Warning
-                ,Pragmas
-                ,Annotation
-                ,Compile 
-
+--
+--executable test 
+--  main-is: BenchMark.hs
+--  hs-source-dirs: tests, src  
+--  build-depends: criterion
+--                ,base >=4.16
+--                ,ghc-paths 
+--                ,ghc >=9.2.5 && < 9.3
+--                ,ghc-boot
+--                ,ghc-prim
+--                ,ghc-exactprint
+--                ,filepath 
+--                ,containers
+--                ,transformers
+--                ,QuickCheck
+--                ,uniplate
+--                ,exceptions
+--                ,text 
+--                ,lens 
+--                ,directory
+--                ,random
+--                ,comonad 
+--                ,data-default
+--                ,optparse-applicative
+--                ,template-haskell 
+--                ,utility-ht
+--                ,aeson
+--                ,temporary
+--                ,bytestring
+--                ,splint 
+--                ,parsec
+--                ,text-replace
+--
+--  other-modules: Similar 
+--                ,Instance 
+--                ,Transform 
+--                ,Utils
+--                ,Test 
+--                ,CompileHs
+--                ,Parsers
+--                ,HoleMatches
+--                ,Print
+--                ,Analyse
+--                ,Diff
+--                ,HoleMatches
+--                ,Instance
+--                ,Feedback
+--                ,Warning
+--                ,Pragmas
+--                ,Annotation
+--                ,Compile 
+--
 library
-    exposed-modules:  Compile
+    exposed-modules:  Compile.Compile
+    hs-source-dirs:   src/ 
     build-depends:    base >=4.16
                       ,ghc-paths 
                       ,ghc >=9.2.5 && < 9.3
@@ -99,21 +101,18 @@ library
                       ,text-replace 
 
     default-language: Haskell2010
-    other-modules:    Similar 
-                      ,Instance 
-                      ,Transform 
-                      ,Utils
-                      ,Test 
-                      ,CompileHs
-                      ,Parsers
-                      ,HoleMatches
-                      ,Print
-                      ,Analyse
-                      ,Diff
-                      ,HoleMatches
-                      ,Instance
-                      ,Feedback
-                      ,Warning
-                      ,Pragmas 
-                      ,Annotation
+    other-modules:    Instances.Similar 
+                      ,Instances.ShowAS 
+                      ,Transform.Transform
+                      ,Transform.Eta
+                      ,Transform.Inline
+                      ,Transform.Remove
+                      ,Transform.Rename
+                      ,Utils.Utils
+                      ,Feedback.PrintHoleMatch
+                      ,Feedback.HoleMatches
+                      ,Feedback.Analyse
+                      ,Instances.Diff
+                      ,Feedback.Feedback
+                      ,Compile.Warning 
 

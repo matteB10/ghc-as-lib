@@ -1,7 +1,6 @@
 module Solution182 where
 
 slice :: [a] -> Int -> Int -> [a]
-{-# DESC Recurse over the first integer argument. #-}
 
 slice lst 1 m = slice' lst m []
   where

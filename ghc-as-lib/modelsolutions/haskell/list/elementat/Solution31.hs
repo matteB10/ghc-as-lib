@@ -1,7 +1,6 @@
 module Solution31 where
 
 elementat :: [a] -> Int -> a
-{-# DESC Use the @prelude function @ind. #-}
 
 elementat list i = list !! (i-1)
 

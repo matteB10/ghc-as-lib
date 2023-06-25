@@ -1,7 +1,6 @@
 module Encode2 where
 
 encode :: Eq a => [a] -> [(Int, a)]
-{-# DESC Use the @higher-order function @foldr. #-}
 
 encode = foldr f []
  where

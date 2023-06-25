@@ -1,7 +1,6 @@
 module Solution42 where
 
 mylength :: [a] -> Int
-{-# DESC Use the @prelude function @foldr. #-}
 
 mylength = {-# F @foldrFeedback #-}
     foldr {-# F How does the length of a list change when an element is added? #-} (\_ -> (+1)) {-# F The length of an empty list. #-} 0

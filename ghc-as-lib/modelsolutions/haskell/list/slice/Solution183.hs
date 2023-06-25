@@ -1,7 +1,6 @@
 module Solution183 where
 
 slice :: [a] -> Int -> Int -> [a]
-{-# DESC  Recurse over the list argument and the integers. #-}
 
 slice (x:xs) i k
    | i > 1     = slice xs (i - 1) (k - 1)

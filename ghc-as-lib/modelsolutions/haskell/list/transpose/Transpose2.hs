@@ -1,7 +1,6 @@
 module Transpose2 where
 
 transpose :: [a] -> [a]
-{-# DESC Use the function @foldr together with @zipWith and @repeat #-}
 
 transpose = foldr (zipWith (:)) (repeat [])
 

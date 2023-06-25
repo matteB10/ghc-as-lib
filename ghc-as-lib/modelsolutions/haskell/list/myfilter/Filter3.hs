@@ -1,7 +1,6 @@
 module Filter3 where
 
 myfilter :: (a -> Bool) -> [a] -> [a]
-{-# DESC Use explicit @recursion with @guards #-}
 
 myfilter _ [] = []
 myfilter p (x:xs) | p x         = x : myfilter p xs

@@ -1,7 +1,6 @@
 module Solution92 where
 
 pack :: Eq a => [a] -> [[a]]
-{-# DESC Use explicit @recursion and calculate @lists of repeated elements. #-}
 
 pack [] = []
 pack (x:xs) = (x:first) : pack rest

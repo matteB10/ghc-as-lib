@@ -1,7 +1,6 @@
 module Solution91 where
 
 pack :: Eq a => [a] -> [[a]]
-{-# DESC Use explicit @recursion and the @prelude function @span. #-}
 
 pack [] = []
 pack (x:xs) = let (first,rest) = span (==x) xs

@@ -1,7 +1,6 @@
 module Solution62 where
 
 palindrome :: Eq a => [a] -> Bool
-{-# DESC Use explicit @recursion, removing both the first and the last element in the recursive call. #-}
 
 palindrome []  = True
 palindrome [_] = True

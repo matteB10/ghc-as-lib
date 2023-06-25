@@ -1,7 +1,6 @@
 module Encode3 where
 
 encode :: Eq a => [a] -> [(Int, a)]
-{-# DESC @tuple each @list element with the integer 1, and merge the elements. #-}
 
 encode xs = merge $ map (\z -> (1, z)) xs
  where merge [] = []

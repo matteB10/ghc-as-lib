@@ -1,7 +1,6 @@
 module Filter1 where
 
 myfilter :: (a -> Bool) -> [a] -> [a]
-{-# DESC Use the @higher-order function @concatMap #-}
 
 myfilter p = concatMap box
     where box x = if p x then [x] else []

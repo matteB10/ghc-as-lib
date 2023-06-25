@@ -1,7 +1,6 @@
 module Iterate where
 
 range :: Int -> Int -> [Int]
-{-# DESC Implement range using @take and @iterate #-}
 
 {-# FC This approach makes clever use of the functions already defined in the @prelude,
        which is in general good coding practice.

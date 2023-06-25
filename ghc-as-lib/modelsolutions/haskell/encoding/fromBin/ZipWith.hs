@@ -1,7 +1,6 @@
 module ZipWith where
 
 fromBin :: [Int] -> Int
-{-# DESC Take the inner product with a list of factors of two. #-}
 {-# ETADECL 1 #-}
 
 fromBin = sum . zipWith {-# ETA 2 #-} (*) (iterate (*2) 1) . reverse

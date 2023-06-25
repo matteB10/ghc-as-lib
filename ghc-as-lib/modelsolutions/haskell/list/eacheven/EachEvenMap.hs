@@ -1,7 +1,6 @@
 module EachEvenMap where
 
 eacheven :: [Int] -> [Bool]
-{-# DESC Use the @prelude function @concatMap. #-}      
 {-# ETADECL 1 #-}
 
 eacheven = map {-# ETA 1 #-} even
