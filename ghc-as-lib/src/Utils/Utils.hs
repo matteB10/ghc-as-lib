@@ -1,7 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
-module Utils.Utils where
+module Utils.Utils (
+    module Utils.String, 
+    module Utils.Utils
+)
+
+where
 
 
 -- GHC imports 
@@ -45,8 +50,9 @@ import GHC.Types.SrcLoc (srcSpanToRealSrcSpan)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text.Lazy (splitOn)
-import Debug.Trace (trace)
-import Data.Char (isSpace)
+
+
+import Utils.String 
 
 type ExerciseName = String
 type ExercisePath = String
@@ -62,29 +68,6 @@ showGhcUnsafe = showSDocUnsafe . ppr
 printGhc :: (Outputable a) => a -> IO ()
 printGhc = putStrLn . showGhcUnsafe
 
-banner :: [Char] -> IO ()
-banner msg = putStrLn $ "\n\n--- " ++ msg ++ " ---\n\n"
-
--- String concatenation helpers
-sp, nl, cm :: String -> String -> String
-sp x y = x ++ " " ++ y
-nl x y = x ++ "\n" ++ y
-cm x y = x ++ " , " ++ y
-
-strip :: String -> String
-strip = compress . lstrip . rstrip
-
-lstrip :: String -> String
-lstrip [] = []
-lstrip (x:xs) | isSpace x = lstrip xs
-              | otherwise      = x:xs
-
-rstrip :: String -> String
-rstrip = reverse . lstrip . reverse
-
-compress (x : y : xs) = if x == y && isSpace x then compress xs else x : compress (y : xs)
-compress x = x
-
 
 hasTypSig :: String -> ParsedSource -> Bool
 -- | Check if a type signature is explicitely declared for 
@@ -93,8 +76,10 @@ hasTypSig s ps = s `elem` concatMap (words . showGhcUnsafe) (getSigs ps)
 
 getSig :: String -> ParsedSource -> Sig GhcPs
 -- | Get type signature matching given function name
-getSig n ps = head $ map (fromJust . get_type_sig) (getSigs ps)
-    where get_type_sig sig = case sig of
+getSig n ps | nonEmpty sigs = head sigs 
+            | otherwise     = error "No type signature defined"
+    where sigs = catMaybes $ map (get_type_sig) (getSigs ps) 
+          get_type_sig sig = case sig of
             ts@(TypeSig _ [name] _) | showGhcUnsafe name == n -> Just ts
             _ -> Nothing
 

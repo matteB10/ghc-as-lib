@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module Instances.ShowAS where
 -- | Module containing Show instances for GHC types
@@ -59,12 +60,12 @@ import Data.Void (Void)
 import Data.Generics.Uniplate.Data ( Biplate )
 -- ===============
 
-deriving instance Show HoleFitPlugin
-deriving instance Show Hole
-deriving instance Show HoleSort
+--deriving instance Show HoleFitPlugin
+--deriving instance Show Hole
+--deriving instance Show HoleSort
 
-instance Show FitPlugin where
-  show fp = "FitPlugin"
+{- instance Show FitPlugin where
+  show fp = "FitPlugin" -}
 
 instance Show Implication where
   show i = "Implication"
@@ -72,8 +73,9 @@ instance Show Implication where
 instance Show OccName where
   show n = showSDocUnsafe $ pprOccName n
 
-instance Show CandPlugin where
-  show c = "CandPlugin"
+{- instance Show CandPlugin where
+  show :: CandPlugin -> String
+  show c = "CandPlugin" -}
 
 instance Show HoleExprRef where
   show (HER e t u) = "(HER " ++ "evTerm " ++ "type: " ++ show t  ++ " uq: " ++ show u ++ ")"
@@ -281,7 +283,6 @@ instance Show AnnProjection where show a = ""
 instance Show EpAnnHsCase where show a = ""
 deriving instance Show (PatSynBind GhcPs GhcPs)
 deriving instance Show (HsExpr GhcPs)
---deriving instance Show (HsRecField' (FieldLabelStrings GhcPs) (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
 deriving instance Show GhcPs
 deriving instance Show (GRHS GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
 deriving instance Show (GRHSs GhcPs (GenLocated SrcSpanAnnA (HsExpr GhcPs)))
@@ -307,20 +308,6 @@ showO = showSDocUnsafe . ppr
 instance Show a => Show (EpAnn a) where
   show (EpAnn anchor ann comment) = "EpAnn " ++ show ann
   show EpAnnNotUsed               = "EpAnnNotUsed"
-
--- belongs to HsDecl if trying to derive instance 
-{- instance Show (TyClDecl GhcPs) where show a = ""
-instance Show (FamilyDecl GhcPs) where show a = ""
-instance Show (InstDecl GhcPs) where show a = ""
-instance Show (DerivDecl GhcPs) where show a = ""
-instance Show (DefaultDecl GhcPs) where show a = ""
-instance Show a => Show (HsBind a) where show a = ""
-instance Show (SpliceDecl GhcPs) where show a = ""
-instance Show (RuleDecls GhcPs) where show a = ""
-instance Show (AnnDecl GhcPs) where show a = ""
-instance Show (WarnDecls GhcPs) where show a = ""
-instance Show (ForeignDecl GhcPs) where show a = ""
-instance Show (StandaloneKindSig GhcPs) where show a = "" -}
 
 instance Show SrcSpanAnnA where
   show (SrcSpanAnn ann span) = show ann

@@ -21,6 +21,7 @@ import Feedback.PrintHoleMatch
 import Compile.Warning
 import Feedback.Feedback
 import Feedback.Analyse 
+import Utils.File  
 
 import System.Directory (listDirectory, doesDirectoryExist, makeAbsolute)
 import System.FilePath ((</>), takeDirectory, takeExtension, takeBaseName)
@@ -33,7 +34,6 @@ import Data.List ((\\))
 
 import System.IO
 import System.IO.Unsafe
-import System.IO.Temp
 import Data.Aeson hiding (Error)
 import qualified Data.ByteString.Lazy as B
 import GHC.Generics
@@ -43,6 +43,9 @@ import GHC.Plugins
 import Options.Applicative.Common (runParser)
 import Language.Haskell.GHC.ExactPrint.Parsers (parseDecl)
 import Data.Map (Map)
+
+
+path = "tests/testfiles"
 
 testAll :: (ExerciseName -> FilePath -> IO CompInfo) -> IO ()
 -- | Test and output number of matched tests
@@ -69,27 +72,6 @@ testAll compilefun = do
     where showRes res tot expres = show res ++ "/" ++ show tot `sp` "of expected" `sp` expres
           getN = takeBaseName . takeDirectory . takeDirectory
 
-
-
-testTc :: FilePath -> (ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)) -> IO ()
-testTc fp f = do
-    files <- getFilePaths fp
-    compiled <- mapM (f "") files
-    mapM_ tcCore compiled
-    putStrLn "All tests typechecked"
-
-testTcAll :: (ExerciseName -> FilePath -> IO (CoreProgram, HscEnv)) -> IO ()
--- | Core lint (typecheck) core program after applying given function f 
-testTcAll f = do
-    files <- getFilePaths path
-    compiled <- mapM (\x -> f (getN x) x) files
-    mapM_ tcCore compiled
-    putStrLn $ "All" `sp` show (length compiled) `sp` "tests typechecked"
-    where getN = takeBaseName . takeDirectory . takeDirectory
-
-tcCore :: (CoreProgram, HscEnv) -> IO ()
-tcCore = uncurry typeCheckCore
-
 toTuple :: CompInfo -> IO (CoreProgram, ParsedSource, [Warning], Map Var Var, String)
 toTuple (CompInfo prog ps ws n e) = return (prog,ps,ws,n,e)
 
@@ -104,43 +86,6 @@ compare_pr compile b fp1 fp2 = do
   when (not res && b) $ putStrLn $ "failed to match : " ++ show fp1 `nl` show feedback
   return ((isMatch feedback || isOnTrack feedback) == b) -- feedback matches expected result
 
-
-matchSuffixedFiles :: FilePath -> IO [(FilePath, FilePath)]
-matchSuffixedFiles folderPath = do
-  files <- listDirectory folderPath
-  let testFiles = filter (\f -> "Test" `isPrefixOf` f) files
-  let modFiles = filter (\f -> "Mod" `isPrefixOf` f) files
-  let matchingTuples = [(dir </> f1, dir </> f2) | f1 <- modFiles, f2 <- testFiles, extractSuffix f1 == extractSuffix f2]
-  return matchingTuples
-  where
-    dir = takeDirectory folderPath
-
-
-extractSuffix :: FilePath -> String
-extractSuffix filePath =
-  let reversedFile = reverse filePath
-      reversedSuffix = takeWhile (/='.') reversedFile ++ "."
-      revSuffWNum = takeWhile isDigit (drop (length reversedSuffix) reversedFile)
-  in reverse (reversedSuffix ++ revSuffWNum)
-
-
-getFilePaths :: FilePath -> IO [FilePath]
-getFilePaths folderPath = do
-  isDir <- doesDirectoryExist folderPath
-  if isDir
-    then do
-      dircontent <- listDirectory folderPath
-      subFiles <- mapM getFilePaths [folderPath </> f | f <- dircontent]
-      let content = map (folderPath </>) dircontent ++ concat subFiles
-      return $ filter (\fp -> (".hs" `isSuffixOf` fp) && not (isConfig fp) && isFile fp) content
-    else
-      return []
-    where isConfig fp = "Config.hs" `isSuffixOf` fp
-
-isFile :: FilePath -> Bool
-isFile path = not (null (takeExtension path))
-
-path = "./testfiles/"
 
 getExFiles :: ExerciseName -> IO [FilePath]
 getExFiles n = do
@@ -275,17 +220,6 @@ writeProg fp ti = do
     hFlush handle
     hClose handle
 
-writeInput :: FilePath -> String -> IO ()
-writeInput path input = do
-    rules <- readFile =<< makeAbsolute rulesFile 
-    -- must insert type signature in a better way later, if not defined by student 
-    let inputstr = tempHeader `nl` input `nl` rules
-    -- Write the inputstr to the temporary file
-    handle <- openFile path WriteMode
-    hPutStrLn handle inputstr
-    hFlush handle
-    hClose handle
-
 
 diagnose :: FilePath -> IO () 
 diagnose fp = decodeJson fp >>= analyseItems
@@ -311,11 +245,11 @@ analyseItems items = do
   putStrLn $ show hlint ++ "/" ++ show tot ++ "got Hlint suggestions"
   
 
-modelsPath, tmpPath, rulesFile :: FilePath
+tmpPath :: FilePath
 -- relative paths
-modelsPath = "modelsolutions/"
 tmpPath    = "tests/studentfiles/Temp.hs"
-rulesFile  = "src/Rules.hs"
+modelsPath = "modelsolutions/"
+
 
 analyse' :: TestItem -> IO Feedback
 analyse' ti = if null (input ti) then return (Ontrack []) else (do
@@ -324,11 +258,11 @@ analyse' ti = if null (input ti) then return (Ontrack []) else (do
      let exercisename = takeBaseName (exerciseid ti)
      hasTypSig <- checkTypeSig path exercisename
      modelFiles <- getFilePaths (modelsPath ++ exerciseid ti)
-     mInfs <- mapM (compSimplNormalised exercisename) modelFiles
+     mInfs <- mapM (compile exercisename) modelFiles
      when (null modelFiles) $ error ("could not read modelfiles from" ++ exerciseid ti)
      typsig <- parseExerciseTypSig (head modelFiles) exercisename
      unless hasTypSig (writeProg path (ti {typesig = typsig}))
-     stInf <- compSimplNormalised exercisename path  -- student progrm
+     stInf <- compile exercisename path  -- student progrm
      let feedback = mkFeedback stInf mInfs
      putStrLn "------------------------------- "
      putStrLn (input ti) >> print feedback
@@ -339,7 +273,7 @@ analyse' ti = if null (input ti) then return (Ontrack []) else (do
 analyse :: String -> ExerciseName -> CompileFun -> IO (CompInfo, CompInfo, Feedback)
 analyse input exercise f = do
   let exercisename = takeBaseName exercise
-  stInf <- compString input exercisename f  -- student progrm
+  stInf <- compString input exercisename  -- student progrm
   modelFiles <- getFilePaths (msPath ++ exercise)
   modInfo <- mapM (f exercisename) modelFiles
   let mInf = getClosest stInf modInfo
@@ -350,9 +284,9 @@ analyse input exercise f = do
 analyse_ :: FilePath -> ExerciseName -> IO (CompInfo, CompInfo, Feedback)
 analyse_ fp exercise = do
   let exercisename = takeBaseName exercise
-  stInf <- compSimplNormalised exercisename fp 
+  stInf <- compile exercisename fp 
   modelFiles <- getFilePaths (msPath ++ exercise)
-  modInfo <- mapM (compSimplNormalised exercisename) modelFiles
+  modInfo <- mapM (compile exercisename) modelFiles
   let mInf = getClosest stInf modInfo
   let feedback = mkFeedback stInf modInfo
   return (stInf, mInf, feedback)
@@ -369,3 +303,18 @@ getBinder p s = let recs = filter isRect p
 isNonRect b = case b of {(Rec es) -> True; _ -> False}
 
 isRect = not . isNonRect  
+
+
+--- For testing purposes 
+type CompileFun = ExerciseName -> FilePath -> IO CompInfo
+
+compString :: String -> ExerciseName -> IO CompInfo
+-- compile a program given as a string
+compString input exercise = do 
+  rules <- readFile "Rules.hs"
+  let inputstr = "module Temp where\n" `nl` input `nl` rules
+  handle <- openFile "studentfiles/Temp.hs" WriteMode
+  hPutStrLn handle inputstr
+  hFlush handle
+  hClose handle
+  compile exercise "./studentfiles/Temp.hs"

@@ -1,8 +1,7 @@
 module Temp where
 
-fromBin :: [Int] -> Int
-fromBin = foldl  _  _
-
+dupli :: [a] -> [a]
+dupli xs = concatMap (replicate 2) xs
 {-# RULES "mapfusion"    forall f g xs.  map f (map g xs) = map (f . g) xs #-}
 
 {-# RULES "$/app"   forall a. forall (f :: a -> a) (g :: a -> a) (x :: a).  f $ g x = f (g x) #-}

@@ -69,8 +69,6 @@ import GHC.LanguageExtensions (Extension(ExtendedDefaultRules, MonomorphismRestr
 
 import Data.Generics.Uniplate.Data
 import System.FilePath ( replaceDirectory, takeBaseName )
-import Debug.Trace (trace)
-import Control.Monad (unless)
 import Splint (plugin)
 import Data.Map ( Map )
 import qualified Data.Map as Map 
@@ -78,6 +76,7 @@ import Utils.Utils
 import Compile.Warning ( Warning, uniqWarns, writeWarnings ) 
 import Transform.Transform
 
+------ GHC settings 
 extFlags :: [Extension]
 -- | Extension flags to enable
 extFlags = [ExtendedDefaultRules] 
@@ -189,8 +188,8 @@ loadWithPlugins dflags t plugins = do
       load LoadAllTargets
 
 parseExerciseTypSig :: FilePath -> ExerciseName -> IO String 
--- | Parse exercise type signature 
-parseExerciseTypSig fp  name = runGhc (Just libdir) $ do 
+-- | Parse exercise type signature from a model file 
+parseExerciseTypSig fp name = runGhc (Just libdir) $ do 
     initEnv True (holeFlags ++ genFlags) fp 
     modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
     pmod <- parseModule modSum 
@@ -220,104 +219,67 @@ initEnv setdefaultFlags flags fp = do
             }] 
   return ref 
 
-toDesugar' :: Bool -> [GeneralFlag] -> FilePath -> Ghc (ModGuts, ParsedSource, IORef [Warning])
--- | Compile a file to the desugar pass + simple optimiser and return Modguts and warnings
-toDesugar' setdefaultFlags flags fp = do
+toDesugar :: Bool -> [GeneralFlag] -> FilePath -> Ghc (ModGuts, ParsedSource, IORef [Warning])
+-- | Compile a file to the desugar pass + simple optimiser 
+toDesugar setdefaultFlags flags fp = do
   ref <- initEnv setdefaultFlags flags fp 
   modSum <- getModSummary $ mkModuleName (takeBaseName fp) 
   pmod <- parseModule modSum 
   tmod <- typecheckModule pmod 
-  --let tprog = attachNote (tm_typechecked_source tmod)
-  dmod <- desugarModule tmod -- (tmod {tm_typechecked_source = tprog})
+  dmod <- desugarModule tmod 
   let modguts = coreModule dmod 
-  --cprog <- liftIO $ preProcess (mg_binds modguts) -- apply preprocessing transformations
-  --let mg = modguts {mg_binds = cprog} 
   return (modguts, (pm_parsed_source pmod), ref)
 
 toSimplify :: FilePath -> Ghc (CoreProgram, ParsedSource, IORef [Warning])
--- | Replace holes and run simplifier 
+-- | Apply preprocessing transformations (replace holes and pattern errors)
+--   and run simplifier 
 toSimplify fp = do 
-  (mgCore,psrc,ref) <- toDesugar' True (holeFlags ++ genFlags ++ simplFlags) fp 
+  (mgCore,psrc,ref) <- toDesugar True (holeFlags ++ genFlags ++ simplFlags) fp 
   env <- getSession
   prog <- liftIO $ preProcess (mg_binds mgCore) 
   mgSimpl <- liftIO $ core2core env (mgCore {mg_binds = prog})
   return (mg_binds mgSimpl,psrc,ref)
 
-toDesugar :: FilePath -> Ghc (CoreProgram, ParsedSource, IORef [Warning])
--- | Desugar and return coreprogram and warnings  
-toDesugar fp = do 
-  (mgCore, psrc,ref) <- (toDesugar' False (holeFlags ++ genFlags) fp)
-  prog <- liftIO $ preProcess (mg_binds mgCore) 
-  return (prog,psrc,ref)
+
+-- compile and normalise 
+compile :: ExerciseName -> FilePath -> IO CompInfo 
+-- | Compile and apply normalisation, removing types as a final step
+compile n fp = compile' n fp >>= 
+              \x -> return $ x {core = removeTyEvidence (core x)}
 
 
-compSimplNormalised :: ExerciseName -> FilePath -> IO CompInfo
+compile' :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile a file to normalised Core with simplifier
-compSimplNormalised name fp = defaultErrorHandler 
-                              defaultFatalMessager 
-                              defaultFlushOut $ 
-                              runGhc (Just libdir) $ do 
+--   without removing types 
+compile' name fp = defaultErrorHandler 
+                   defaultFatalMessager 
+                   defaultFlushOut $ 
+                   runGhc (Just libdir) $ do 
   (prog,psrc,wref) <- toSimplify fp 
   (normprog,names) <- liftIO $ normalise name prog 
   ws <- liftIO (readIORef wref)
-  return $ CompInfo (removeTyEvidence normprog) psrc (nubBy uniqWarns ws) names name 
+  return $ CompInfo normprog psrc (nubBy uniqWarns ws) names name 
 
-compDesNormalised :: ExerciseName -> FilePath -> IO CompInfo
+
+--- For testing desugar pass
+
+compileDesugar :: ExerciseName -> FilePath -> IO CompInfo
 -- | Compile a file to normalised Core without simplifier
-compDesNormalised name fp = defaultErrorHandler defaultFatalMessager defaultFlushOut $ runGhc (Just libdir) $ do 
-  (prog,psrc,ref) <- toDesugar fp 
-  (prog', names) <- liftIO $ normalise name =<< preProcess prog
+compileDesugar name fp = defaultErrorHandler 
+                         defaultFatalMessager 
+                         defaultFlushOut $ 
+                         runGhc (Just libdir) $ do 
+  (mg,psrc,ref) <- toDesugar False (holeFlags ++ genFlags) fp 
+  (prog, names) <- liftIO $ normalise name =<< preProcess (mg_binds mg)
   ws <- liftIO (readIORef ref)
-  return $ CompInfo (removeTyEvidence prog') psrc (nubBy uniqWarns ws) names name 
+  return $ CompInfo (removeTyEvidence prog) psrc (nubBy uniqWarns ws) names name 
 
-compSimpl :: ExerciseName -> FilePath -> IO CompInfo
--- | Compile to simplified core directly, return renamed program and warnings
-compSimpl name fp = runGhc (Just libdir) $ do
-  (prog,psrc,ref) <- toSimplify fp
-  ws <- liftIO $ readIORef ref  
-  (p',vars) <- liftIO $ alpha name prog -- =<< replacePatErrors prog 
-  return $ CompInfo prog psrc (nubBy uniqWarns ws) Map.empty name 
-
-compDes :: ExerciseName -> FilePath -> IO CompInfo
--- | Compile to desugared core directly, return renamed program and warnings
-compDes name fp = runGhc (Just libdir) $ do
-  (prog,psrc,ref) <- toDesugar fp 
-  ws <- liftIO $ readIORef ref
-  (p',vars) <- liftIO $ alpha name prog 
-  return $ CompInfo p' psrc (nubBy uniqWarns ws) Map.empty name 
-
-
---- For testing purposes 
-type CompileFun = ExerciseName -> FilePath -> IO CompInfo
-
-compString :: String -> ExerciseName -> CompileFun -> IO CompInfo
--- compile a program given as a string
-compString input exercise f = do 
-  rules <- readFile "Rules.hs"
-  let inputstr = "module Temp where\n" `nl` input `nl` rules
-  handle <- openFile "studentfiles/Temp.hs" WriteMode
-  hPutStrLn handle inputstr
-  hFlush handle
-  hClose handle
-  f exercise "./studentfiles/Temp.hs"
-
+-- To run the CoreLinter 
 
 compTestNorm :: ExerciseName -> FilePath -> IO (CoreProgram,HscEnv)
 -- | Compile with given function, return normalised program and environment
 compTestNorm n fp = runGhc (Just libdir) $ do
   initEnv True (holeFlags ++ genFlags ++ simplFlags) fp 
-  c <- liftIO (compSimpl n fp)
-  (prog,_) <- liftIO $ normalise n (core c) 
+  res <- liftIO $ compile' n fp  
   env <- getSession 
-  return (prog,env)
-
-
-typeCheckCore :: CoreProgram -> HscEnv -> IO ()
--- | Use Core Linter to check for problems
-typeCheckCore coreprog env = do
-   let coretodo = CoreDoPasses [CoreDoNothing]
-       dflags = hsc_dflags env   
-   unless (gopt Opt_DoCoreLinting dflags) $ error "CoreLinting flag must be set"
-   liftIO $ lintPassResult env coretodo (coreprog)
-
-
+  return (core res,env)

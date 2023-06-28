@@ -69,9 +69,10 @@ extra-source-files: CHANGELOG.md
 --                ,Annotation
 --                ,Compile 
 --
-library
+library comp
     exposed-modules:  Compile.Compile
     hs-source-dirs:   src/ 
+                      tests/
     build-depends:    base >=4.16
                       ,ghc-paths 
                       ,ghc >=9.2.5 && < 9.3
@@ -109,10 +110,15 @@ library
                       ,Transform.Remove
                       ,Transform.Rename
                       ,Utils.Utils
+                      ,Utils.File 
+                      ,Utils.String 
                       ,Feedback.PrintHoleMatch
                       ,Feedback.HoleMatches
                       ,Feedback.Analyse
                       ,Instances.Diff
                       ,Feedback.Feedback
                       ,Compile.Warning 
+                      ,Test
+                      ,CoreLint
+                      ,Diagnose 
 

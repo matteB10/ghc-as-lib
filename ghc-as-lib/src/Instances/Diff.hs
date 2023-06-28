@@ -19,7 +19,7 @@ import GHC.Core.DataCon (DataCon(..), dataConName)
 import GHC.Utils.Outputable (showSDocUnsafe, Outputable (ppr))
 import GHC.Types.Literal (Literal(..), LitNumType)
 
-import Utils.Utils ( isHoleVar, sp, isHoleExpr, isHoleVarExpr)
+import Utils.Utils ( isHoleVar, isHoleExpr, isHoleVarExpr, sp)
 import GHC.Cmm (isAssociativeMachOp)
 import GHC.Core.Coercion (eqCoercion)
 import Data.Generics.Uniplate.Data ( children )
